@@ -1,0 +1,38 @@
+# Copy to data/config.toml (or <your data dir>/config.toml) and edit. Every key is optional.
+# Restart `ws serve` after a change.
+
+[owner]
+# Stable id recorded in the event log. Lowercase letters, digits, - or _.
+# Set it before the first start; changing it later orphans earlier records.
+id = "owner"
+# Shown in the dashboard and in the agents' prompts.
+name = "Owner"
+
+[display]
+# IANA time zone used for "today", "this week" and displayed deadlines.
+timezone = "UTC"
+
+[server]
+port = 8770
+
+[agents.claude]
+# Model alias or id passed to `claude -p --model`.
+model = "sonnet"
+
+[agents.gpt]
+# Model id passed to `codex exec -m`, and its reasoning effort (low, medium, high).
+model = "gpt-6-astra"
+effort = "medium"
+
+# What the dashboard can and cannot see, shown on Home. Replace the defaults to match your setup.
+[[coverage]]
+source = "Claude Code (threads, engineering tasks)"
+state = "connected"
+
+[[coverage]]
+source = "GPT via Codex CLI (threads, reviews)"
+state = "connected"
+
+[[coverage]]
+source = "Mail and calendar"
+state = "not connected; nothing from mail is shown"

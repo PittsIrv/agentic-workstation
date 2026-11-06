@@ -1,0 +1,33 @@
+[project]
+name = "agentic-workstation"
+version = "0.1.0"
+description = "A local workstation where you ask Claude and GPT in one thread, decide on one page, and track evidence-backed tasks"
+readme = "README.md"
+authors = [{ name = "PittsIrv" }]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.162.0",
+    "httpx>=0.28.1",
+    "pydantic>=2.14.3",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+ws = "workstation.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "workstation"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["tests"]

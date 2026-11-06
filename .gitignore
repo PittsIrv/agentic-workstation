@@ -1,0 +1,19 @@
+# Your instance: database, tokens, config, backups
+data/
+
+# Personal working records (kept locally, not published)
+STATE.md
+docs/decisions/
+docs/reviews/
+docs/report/
+docs/spike/
+docs/adr/
+docs/audit-existing-dashboard.md
+docs/whats-new.md
+private/
+.claude/
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

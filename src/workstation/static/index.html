@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workstation</title>
+<style>
+:root{--bg:#f6f5f1;--fg:#23221f;--mute:#6b6963;--card:#fff;--line:#dcd9cf;--acc:#2f5f8f;--ask:#b8740f;--ask-bg:#fbf0dc;--ask-fg:#5c3a05;--run:#2f6fb5;--rev:#6a5acd;--ok:#2a8a63;--ok-bg:#e4f3ec;--bad:#c23b3b;--bad-bg:#f9e3e3;--mid-bg:#ecebe6;
+--claude:#b4572e;--gpt:#2a7a62;--gemini:#3b6fd0;--human:#23221f;
+--font:"IBM Plex Sans",system-ui,-apple-system,sans-serif;--mono:"IBM Plex Mono",ui-monospace,monospace}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1b1b19;--fg:#ebe9e3;--mute:#a9a69c;--card:#242422;--line:#3a3935;--acc:#8ab4e0;--ask:#e3a53c;--ask-bg:#3b2a10;--ask-fg:#f6d292;--run:#6fa3dd;--rev:#a79af0;--ok:#5fc094;--ok-bg:#1f3a2e;--bad:#e06464;--bad-bg:#432222;--mid-bg:#2f2f2c;--claude:#e08a5f;--gpt:#5fc0a0;--gemini:#86a8f0;--human:#ebe9e3;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#1b1b19;--fg:#ebe9e3;--mute:#a9a69c;--card:#242422;--line:#3a3935;--acc:#8ab4e0;--ask:#e3a53c;--ask-bg:#3b2a10;--ask-fg:#f6d292;--run:#6fa3dd;--rev:#a79af0;--ok:#5fc094;--ok-bg:#1f3a2e;--bad:#e06464;--bad-bg:#432222;--mid-bg:#2f2f2c;--claude:#e08a5f;--gpt:#5fc0a0;--gemini:#86a8f0;--human:#ebe9e3;color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--font);margin:0;padding:18px max(16px,env(safe-area-inset-left)) 48px}
+a{color:var(--acc)} h1{font:500 22px/1.2 var(--font);margin:0} h2{font:500 16px/1.3 var(--font);margin:0 0 10px;display:flex;gap:8px;align-items:baseline} h2 .cnt{font-size:12px;color:var(--mute);font-weight:400}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+nav{display:flex;gap:4px;flex-wrap:wrap} nav a{text-decoration:none;color:var(--fg);padding:5px 12px;border-radius:999px;border:1px solid transparent;font-size:14px} nav a[aria-current="page"]{border-color:var(--line);background:var(--card)}
+.sub{color:var(--mute);font-size:13px;margin:2px 0 16px}
+.strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-bottom:16px}
+.tile,.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;min-width:0}
+.k{display:block;font-size:12px;color:var(--mute);letter-spacing:.04em;text-transform:uppercase;margin-bottom:4px}
+.big{font:500 17px/1.35 var(--font);display:block}
+.cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start} @media(max-width:860px){.cols{grid-template-columns:1fr}}
+section{margin-bottom:18px}
+.card{margin-bottom:10px} .card .t{font-weight:500} .meta{font-size:12.5px;color:var(--mute);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
+.pill{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;background:var(--mid-bg);color:var(--fg);white-space:nowrap}
+.pill.ask{background:var(--ask-bg);color:var(--ask-fg)} .pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.bad{background:var(--bad-bg);color:var(--bad)} .pill.run{background:transparent;border:1px solid var(--run);color:var(--run)}
+.who{font-weight:500} .who.claude{color:var(--claude)} .who.gpt{color:var(--gpt)} .who.gemini{color:var(--gemini)} .who.human{color:var(--human)} .who.system{color:var(--mute)}
+.bucket{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 6px} .bucket.overdue{color:var(--bad)}
+button,.btn{font:13.5px var(--font);border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:8px;padding:5px 11px;cursor:pointer}
+button:hover{border-color:var(--acc)} button.primary{background:var(--acc);border-color:var(--acc);color:#fff} button:disabled{opacity:.5;cursor:default}
+button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.dc .q{font:500 16px/1.35 var(--font);margin:2px 0 6px} .dc .ctx{font-size:13px;color:var(--mute)}
+.opt{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:6px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.recs{margin-top:8px;font-size:13.5px} .recs div{margin-top:3px}
+.agents{display:grid;gap:6px} .ag{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-size:14px} .ag small{color:var(--mute);font-size:12px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--mute)} .dot.on{background:var(--ok)} .dot.off{background:var(--bad)} .dot.wait{background:var(--ask)}
+.msg{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:10px;border-left:3px solid var(--line)}
+.msg.claude{border-left-color:var(--claude)} .msg.gpt{border-left-color:var(--gpt)} .msg.human{border-left-color:var(--human)}
+.msg.notice{background:transparent;border:1px dashed var(--line);font-size:13px;color:var(--mute);padding:6px 12px}
+.msg .hd{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:13px;margin-bottom:4px} .msg .hd .at{color:var(--mute);font-size:12px}
+.body p{margin:.35em 0} .body ul{margin:.3em 0 .3em 1.2em;padding:0} .body code{font:13px var(--mono);background:var(--mid-bg);padding:0 4px;border-radius:4px}
+.struct{margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--bg);font-size:13.5px}
+textarea,input,select{font:14px var(--font);width:100%;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--card);color:var(--fg)}
+textarea{min-height:76px;resize:vertical}
+.composer{position:sticky;bottom:0;background:var(--bg);padding-top:8px}
+.empty{color:var(--mute);font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:13.5px} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top} th{font-weight:500;color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.tablewrap{overflow-x:auto}
+.cov li{font-size:13px} .cov{margin:0;padding-left:18px}
+.banner{background:var(--ask-bg);color:var(--ask-fg);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:14px}
+.err{color:var(--bad);font-size:13px}
+.note{font-size:12.5px;color:var(--mute);margin-top:3px}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<div class="top"><h1>Workstation</h1>
+<nav><a href="#/" data-nav="home">Home</a><a href="#/threads" data-nav="threads">Threads</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/activity" data-nav="activity">Activity</a></nav></div>
+<div class="sub" id="sub">Loading…</div>
+<div id="offline" class="banner hidden" role="status"></div>
+<main id="view"></main>
+<script>
+"use strict";
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const link = (url, label) => /^(https?:\/\/|#\/)/.test(url || "") ? `<a href="${esc(url)}"${url.startsWith("#") ? "" : ' target="_blank" rel="noopener noreferrer"'}>${esc(label)}</a>` : esc(label);
+let OWNER = "owner";  // replaced from /api/principals at start
+const NAMES = {owner: "Owner", claude: "Claude", gpt: "GPT", gemini: "Gemini", system: "Workstation"};
+const who = id => `<span class="who ${esc(id)}${id === OWNER ? " human" : ""}">${esc(NAMES[id] || id)}</span>`;
+const fmt = iso => { if (!iso) return ""; const d = new Date(iso); return d.toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"}); };
+const ago = iso => { if (!iso) return "never"; const s = (Date.now() - new Date(iso)) / 1000; return s < 60 ? "just now" : s < 3600 ? Math.round(s / 60) + " min ago" : s < 86400 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " d ago"; };
+function md(t) {
+  const lines = esc(t).split(/\n/); let out = "", inList = false;
+  for (const l of lines) {
+    const li = l.match(/^\s*[-*•]\s+(.*)/) || l.match(/^\s*\d+[.)]\s+(.*)/);
+    if (li) { if (!inList) { out += "<ul>"; inList = true; } out += "<li>" + inline(li[1]) + "</li>"; continue; }
+    if (inList) { out += "</ul>"; inList = false; }
+    if (l.trim()) out += "<p>" + inline(l.replace(/^#+\s*/, "")) + "</p>";
+  }
+  return out + (inList ? "</ul>" : "");
+}
+const inline = s => s.replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, credentials: "same-origin",
+    headers: {"Content-Type": "application/json", "X-Workstation": "1", ...(opts.headers || {})},
+    body: opts.body ? JSON.stringify(opts.body) : undefined});
+  if (r.status === 401) { signedOut(); throw new Error("signed out"); }
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || j.detail || r.statusText);
+  return j;
+}
+function signedOut() {
+  $("#view").innerHTML = `<div class="card"><div class="t">Not signed in</div><p>In the project folder run <code>uv run ws open</code>; it opens a one-time sign-in link.</p></div>`;
+  $("#sub").textContent = "";
+}
+const STATUS_PILL = {inbox: "", ready: "", in_progress: "run", blocked: "bad", needs_review: "ask", done: "ok", canceled: ""};
+const pill = (s, cls) => `<span class="pill ${cls ?? STATUS_PILL[s] ?? ""}">${esc(String(s).replace(/_/g, " "))}</span>`;
+
+// ---------- Home ----------
+const BUCKETS = [["overdue", "Overdue"], ["today", "Today"], ["this_week", "Next 7 days"], ["undated", "No date"], ["later", "Later"]];
+function taskCard(t) {
+  const src = t.provenance?.confidence ? `${t.source_system} · ${t.provenance.confidence.replace(/_/g, " ")}` : t.source_system;
+  return `<div class="card"><div class="row" style="margin:0;justify-content:space-between"><a class="t" href="#/tasks/${esc(t.id)}">${esc(t.title)}</a><span>${t.reviews.length ? pill(NAMES[t.reviews.at(-1).by] + ": " + t.reviews.at(-1).verdict, t.reviews.at(-1).verdict === "approve" ? "ok" : "ask") + " " : ""}${pill(t.status)}</span></div>
+  <div style="font-size:14px;margin-top:2px">→ ${esc(t.action)}</div>
+  <div class="meta"><span>${esc(t.project)}</span><span>owner ${who(t.owner)}</span>${t.due_local ? `<span>due ${esc(t.due_local)}</span>` : ""}<span>from ${who(t.created_by)} via ${esc(src)}</span>${t.thread_id ? `<a href="#/threads/${esc(t.thread_id)}">thread</a>` : ""}${t.artifacts.length ? `<span>${t.artifacts.length} artifact(s)</span>` : ""}</div>
+  ${t.why ? `<div class="meta">Why: ${esc(t.why)}</div>` : ""}
+  <div class="row">${quickActions(t)}</div></div>`;
+}
+function quickActions(t) {
+  const b = (s, label, primary) => `<button ${primary ? 'class="primary"' : ""} data-task="${esc(t.id)}" data-v="${t.version}" data-status="${s}">${label}</button>`;
+  if (t.status === "needs_review") return b("done", "Accept", true) + b("in_progress", "Send back");
+  if (t.status === "blocked") return b("ready", "Unblocked");
+  if (t.owner !== OWNER) return "";
+  return (t.status !== "in_progress" ? b("in_progress", "Start") : "") + b("done", "Done", true) + b("canceled", "Dismiss");
+}
+function decisionCard(d, full) {
+  const recs = (d.recommendations || []).map(r => `<div>${who(r.agent)}${r.mode === "critique" ? " (after critique)" : ""}: ${esc(r.summary)}${r.message_id && d.thread_id ? ` <a href="#/threads/${esc(d.thread_id)}">source</a>` : ""}</div>`).join("");
+  const opts = d.options.map(o => `<div class="opt"><span>${esc(o.label)}${o.detail ? `<br><small class="meta">${esc(o.detail)}</small>` : ""}</span>${d.status === "pending" ? `<button class="primary" data-approve="${esc(d.id)}" data-o="${esc(o.id)}" data-label="${esc(o.label)}">Approve</button>` : (d.option_id === o.id ? pill("chosen", "ok") : "")}</div>`).join("");
+  return `<div class="card dc"><div class="row" style="margin:0;justify-content:space-between"><span class="k" style="margin:0">${esc(d.urgency === "high" ? "Urgent decision" : "Decision")} · by ${esc(NAMES[d.created_by] || d.created_by)} · ${esc(fmt(d.created_at))}</span>${pill(d.status, d.status === "pending" ? "ask" : d.status === "approved" ? "ok" : "")}</div>
+  <div class="q">${esc(d.question)}</div>${d.context ? `<div class="ctx">${esc(d.context)}</div>` : ""}
+  ${recs ? `<div class="recs"><span class="k">Positions</span>${recs}</div>` : ""}${opts}
+  ${(d.evidence || []).length ? `<div class="meta">Evidence: ${d.evidence.map(e => link(e.url, e.label)).join(" · ")}</div>` : ""}
+  ${d.status === "pending" ? `<div class="row"><button data-resolve="${esc(d.id)}" data-s="deferred">Defer</button><button data-resolve="${esc(d.id)}" data-s="rejected">Reject all</button><span class="note">Only you can resolve this. Approving assigns ${who(d.follow_up_owner)} an engineering task.</span></div>`
+    : `<div class="meta">Resolved by ${who(d.resolved_by)} ${esc(fmt(d.resolved_at))}${d.note ? " — " + esc(d.note) : ""}${d.resulting_task ? ` · <a href="#/tasks/${esc(d.resulting_task)}">resulting task</a>` : ""}</div>`}</div>`;
+}
+function agentRows(agents) {
+  return agents.map(a => {
+    const state = a.running ? ["wait", `working on ${a.running}`] : a.available ? ["on", "ready"] : a.pull_fallback ? ["wait", "CLI unavailable · session pickup"] : ["off", "offline"];
+    return `<div class="ag"><span><span class="dot ${state[0]}"></span>${who(a.id)} <small>${esc(a.runtime)}</small></span><small>${esc(state[1])}${a.waiting ? ` · ${a.waiting} waiting` : ""} · last reply ${esc(ago(a.last_reply_at))}</small></div>
+    ${!a.available || a.last_failure ? `<small class="meta" style="margin:-2px 0 4px 14px">${esc(a.available ? "last failure: " + (a.last_failure || "") : a.reason)}</small>` : ""}`;
+  }).join("");
+}
+async function renderHome() {
+  const h = await api("/api/home");
+  $("#sub").textContent = `${new Date(h.now).toLocaleString([], {weekday: "long", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"})} · ${h.tz} · shows only what agents and you recorded here`;
+  const next = h.actions[0], dec = h.decisions[0];
+  let groups = "";
+  for (const [b, label] of BUCKETS) {
+    const ts = h.actions.filter(t => t.bucket === b);
+    if (ts.length) groups += `<div class="bucket ${b}">${label} · ${ts.length}</div>` + ts.map(taskCard).join("");
+  }
+  $("#view").innerHTML = `
+  <div class="strip">
+    <div class="tile"><span class="k">Your next action</span>${next ? `<a class="big" href="#/tasks/${esc(next.id)}">${esc(next.action)}</a><div class="meta">${esc(next.title)} · ${esc(next.project)}${next.due_local ? " · due " + esc(next.due_local) : ""}</div>` : `<span class="big">Nothing waits on you</span>`}</div>
+    <div class="tile"><span class="k">Most urgent decision</span>${dec ? `<a class="big" href="#/decisions/${esc(dec.id)}">${esc(dec.question)}</a><div class="meta">${dec.options.length} options · ${dec.recommendations.length} agent position(s)</div>` : `<span class="big">No pending decisions</span>`}</div>
+    <div class="tile"><span class="k">Agents</span><div class="agents">${agentRows(h.agents)}</div></div>
+  </div>
+  <div class="cols">
+    <section><h2>What needs you <span class="cnt">${h.actions.length} open</span></h2>${groups || '<p class="empty">Nothing open.</p>'}
+      <details class="card"><summary>Add a task</summary>${taskForm(h.projects)}</details></section>
+    <section><h2>Decisions <span class="cnt">${h.decisions.length} pending</span></h2>${h.decisions.map(d => decisionCard(d)).join("") || '<p class="empty">No pending decisions.</p>'}
+      <h2 style="margin-top:18px">Threads <span class="cnt">${h.threads.length}</span></h2>
+      ${h.threads.slice(0, 6).map(t => `<div class="card"><a class="t" href="#/threads/${esc(t.id)}">${esc(t.title)}</a>${t.pending ? ` ${pill(t.pending + " agent(s) working", "run")}` : ""}<div class="note">${t.last ? `${who(Object.keys(NAMES).find(k => NAMES[k] === t.last.author) || "system")}: ${esc(t.last.text)}` : "No messages"} · ${esc(ago(t.updated_at))}</div></div>`).join("") || '<p class="empty">No threads yet.</p>'}
+      <a href="#/threads">All threads / start one →</a></section>
+  </div>
+  <section><h2>Projects</h2><div class="strip">${h.projects.map(p => `<div class="tile"><span class="k">${esc(p.stage || "project")}</span><span class="big">${esc(p.name)}</span><div class="meta">${esc(p.goal || "")}</div><div class="meta"><span>${p.open} open</span><span>${p.blocked} blocked</span><span>${p.done} done</span></div>${p.next ? `<div class="meta">Next: ${esc(p.next.title)} (${esc(p.next.owner)})</div>` : ""}${p.last_progress ? `<div class="meta">Last change ${esc(ago(p.last_progress.at))} by ${who(p.last_progress.actor)}</div>` : ""}</div>`).join("")}</div></section>
+  <section><h2>What this dashboard can see</h2><div class="tile"><ul class="cov">${h.coverage.map(c => `<li>${esc(c.source)} — <b>${esc(c.state)}</b></li>`).join("")}</ul></div></section>`;
+}
+function taskForm(projects) {
+  return `<form id="newtask" class="row" style="flex-direction:column;align-items:stretch">
+    <input name="title" placeholder="Task" required><input name="next_action" placeholder="Next action (optional)">
+    <div class="row" style="margin:0"><select name="project_id" style="width:auto">${projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select>
+    <select name="owner" style="width:auto"><option value="${esc(OWNER)}">Me</option><option value="claude">Claude</option></select>
+    <input name="due" type="datetime-local" style="width:auto"><select name="priority" style="width:auto"><option>P2</option><option>P1</option><option>P0</option><option>P3</option></select>
+    <button class="primary">Add</button><span class="err" id="taskerr"></span></div></form>`;
+}
+
+// ---------- Threads ----------
+async function renderThreads() {
+  const h = await api("/api/home");
+  $("#sub").textContent = "Shared threads. @mention Claude and GPT; each gets this thread's context only.";
+  $("#view").innerHTML = `<div class="card"><div class="t">Start a thread</div><form id="newthread" class="row">
+    <input name="title" placeholder="Topic, e.g. “Should the dashboard move to event-driven updates?”" required style="flex:1 1 320px">
+    <select name="project_id" style="width:auto">${h.projects.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select><button class="primary">Create</button></form></div>
+    ${h.threads.map(t => `<div class="card"><a class="t" href="#/threads/${esc(t.id)}">${esc(t.title)}</a>${t.pending ? ` ${pill(t.pending + " working", "run")}` : ""}<div class="meta"><span>${t.messages} posts</span><span>${esc(ago(t.updated_at))}</span>${t.last ? `<span>${esc(t.last.author)}: ${esc(t.last.text)}</span>` : ""}</div></div>`).join("") || '<p class="empty">No threads yet.</p>'}`;
+}
+let draftCache = null;
+async function renderThread(id) {
+  const t = await api(`/api/threads/${encodeURIComponent(id)}`);
+  $("#sub").innerHTML = `${esc(t.project)} · ${t.participants.map(who).join(", ")} · agent turns ${t.turns_used}/${t.budget.max_agent_turns} · critique rounds ${t.critique_rounds_used}/${t.budget.critique_rounds}`;
+  const live = t.dispatches.filter(d => ["queued", "running"].includes(d.status));
+  const agentReplies = new Set(t.messages.filter(m => m.author_kind === "agent").map(m => m.author));
+  const keep = $("#composer")?.value || "";
+  $("#view").innerHTML = `<h2>${esc(t.title)}</h2>
+  <div class="cols"><div>
+  ${t.messages.map(m => msgView(m, t)).join("") || '<p class="empty">No posts yet. Mention @claude and/or @gpt to ask them.</p>'}
+  ${live.map(d => `<div class="msg notice">${who(d.agent)} ${d.status === "running" ? "is writing" : "is waiting to be picked up"} (${esc(d.mode === "critique" ? "critique of #" + d.target_seq : "independent reply")}, sees posts up to #${d.until_seq})…</div>`).join("")}
+  <div class="composer"><textarea id="composer" placeholder="Write to the thread. @claude for engineering, @gpt for independent review.">${esc(keep)}</textarea>
+  <div class="row"><button data-insert="@claude ">@Claude</button><button data-insert="@gpt ">@GPT</button><button class="primary" id="send">Send</button>
+  <button id="critique" ${agentReplies.size < 2 || t.critique_rounds_used >= t.budget.critique_rounds ? "disabled" : ""} title="Each agent reads the other's latest reply and critiques it. One round.">Cross-review</button>
+  <button id="draft" ${agentReplies.size ? "" : "disabled"}>Draft decision card</button><span class="err" id="threaderr"></span></div></div>
+  <div id="draftbox"></div></div>
+  <div><h2>Outcomes</h2>${t.decisions.map(d => decisionCard(d)).join("")}${t.tasks.map(taskCard).join("") || (t.decisions.length ? "" : '<p class="empty">No decision or task from this thread yet.</p>')}</div></div>`;
+  $("#composer").focus();
+  const ta = $("#composer"); ta.selectionStart = ta.selectionEnd = ta.value.length;
+  if (draftCache && draftCache.thread_id === id) showDraft(draftCache);
+}
+function msgView(m, t) {
+  if (m.kind === "notice") return `<div class="msg notice">${esc(m.text)} <span class="at">· ${esc(fmt(m.at))}</span></div>`;
+  const d = m.dispatch, s = m.structured || {}, rt = m.runtime || {};
+  const label = d ? (d.mode === "critique" ? `critique of #${d.target_seq}` : "independent reply") : "";
+  const saw = d?.context?.message_seqs?.length ? `saw #${d.context.message_seqs[0]}–#${d.context.message_seqs.at(-1)}` : "";
+  const struct = (s.position || (s.options || []).length || s.verdict || (s.proposed_tasks || []).length) ? `<div class="struct">
+    ${s.position ? `<div><span class="k" style="display:inline">Position</span> ${esc(s.position)}</div>` : ""}
+    ${(s.options || []).length ? `<div><span class="k" style="display:inline">Options</span> ${s.options.map(esc).join(" · ")}</div>` : ""}
+    ${s.verdict ? `<div><span class="k" style="display:inline">Verdict</span> ${pill(s.verdict, s.verdict === "approve" ? "ok" : "ask")}</div>` : ""}
+    ${(s.proposed_tasks || []).map(p => `<div class="row" style="margin-top:4px"><span>Proposed task: ${esc(p.title)} (${esc(NAMES[p.owner] || p.owner)})</span><button data-propose='${esc(JSON.stringify({title: p.title, owner: p.owner === "claude" ? "claude" : OWNER, thread_id: t.id, project_id: t.project_id, why: "Proposed by " + (NAMES[m.author] || m.author) + " in thread #" + m.seq}))}'>Create task</button></div>`).join("")}</div>` : "";
+  const sugg = (m.suggested_mentions || []).map(a => `<button data-insert="@${esc(a)} ">Ask ${esc(NAMES[a] || a)}</button>`).join("");
+  return `<div class="msg ${esc(m.author)}${m.author === OWNER ? " human" : ""}" id="m${m.seq}"><div class="hd"><span>#${m.seq}</span>${who(m.author)}${label ? pill(label) : ""}${rt.runtime ? `<span class="at">${esc(rt.runtime)}${rt.model ? " · " + esc(rt.model) : ""}</span>` : ""}${saw ? `<span class="at">${esc(saw)}</span>` : ""}<span class="at">${esc(fmt(m.at))}</span></div>
+  <div class="body">${md(m.text)}</div>${struct}${sugg ? `<div class="row">${sugg}<span class="note">Agent suggested; nothing is sent until you ask.</span></div>` : ""}</div>`;
+}
+function showDraft(d) {
+  draftCache = d;
+  $("#draftbox").innerHTML = `<div class="card"><div class="t">Decision card (draft — edit, then create)</div>
+  <form id="decform"><label class="k" for="dq">Question</label><input id="dq" name="question" value="${esc(d.question)}" required>
+  <label class="k" for="dc" style="margin-top:8px">Context</label><input id="dc" name="context" value="${esc(d.context || "")}" placeholder="What is at stake (optional)">
+  <span class="k" style="margin-top:8px">Options (one per line)</span><textarea name="options">${esc(d.options.map(o => o.label).join("\n"))}</textarea>
+  <div class="recs"><span class="k">Positions carried over</span>${d.recommendations.map(r => `<div>${who(r.agent)}: ${esc(r.summary)}</div>`).join("") || '<span class="empty">none</span>'}</div>
+  <div class="row"><select name="urgency" style="width:auto"><option value="normal">Normal</option><option value="high">Urgent</option></select>
+  <select name="follow_up_owner" style="width:auto"><option value="claude">Approval → task for Claude</option><option value="${esc(OWNER)}">Approval → task for me</option></select>
+  <button class="primary">Create decision card</button><button type="button" id="canceldraft">Cancel</button></div></form></div>`;
+}
+
+// ---------- Task / decision / lists ----------
+async function renderTask(id) {
+  const t = await api(`/api/tasks/${encodeURIComponent(id)}`);
+  $("#sub").innerHTML = `${esc(t.project)} · owner ${who(t.owner)} · version ${t.version}`;
+  $("#view").innerHTML = `<div class="cols"><div>${taskCard(t)}
+  <div class="card"><span class="k">Evidence</span>${t.artifacts.map(a => `<div class="row" style="margin-top:4px">${pill(a.verification.state, a.verification.state === "verified" ? "ok" : a.verification.state === "not_found" ? "bad" : "")}<span>${esc(a.kind)}: ${link(a.url, a.title)} ${a.ref ? `<code>${esc(a.ref.slice(0, 12))}</code>` : ""} · by ${who(a.by)}</span></div>`).join("") || '<p class="empty">No artifacts linked. Agents must link evidence before asking for review.</p>'}
+  ${t.evidence_url ? `<div class="meta">Source: ${link(t.evidence_url, t.evidence_url)}</div>` : ""}</div>
+  <div class="card"><span class="k">Reviews</span>${t.reviews.map(r => `<div style="margin-top:4px">${who(r.by)} ${pill(r.verdict, r.verdict === "approve" ? "ok" : "ask")} ${esc(r.summary)}</div>`).join("") || '<p class="empty">No reviews yet.</p>'}</div>
+  <div class="card"><span class="k">Edit</span><form id="edittask" data-id="${esc(t.id)}" data-v="${t.version}" class="row" style="flex-direction:column;align-items:stretch">
+  <input name="title" value="${esc(t.title)}"><input name="next_action" value="${esc(t.next_action)}" placeholder="Next action">
+  <div class="row" style="margin:0"><select name="status" style="width:auto">${["inbox", "ready", "in_progress", "blocked", "needs_review", "done", "canceled"].map(s => `<option ${s === t.status ? "selected" : ""}>${s}</option>`).join("")}</select>
+  <select name="owner" style="width:auto">${[OWNER, "claude", "gpt", "gemini"].map(o => `<option value="${esc(o)}" ${o === t.owner ? "selected" : ""}>${NAMES[o]}</option>`).join("")}</select>
+  <select name="priority" style="width:auto">${["P0", "P1", "P2", "P3"].map(p => `<option ${p === t.priority ? "selected" : ""}>${p}</option>`).join("")}</select><button class="primary">Save</button><span class="err" id="editerr"></span></div></form></div></div>
+  <div class="card"><span class="k">History (audit)</span><div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Event</th><th>Status after</th></tr>
+  ${t.history.slice().reverse().map(h => `<tr><td>${esc(fmt(h.at))}</td><td>${who(h.actor)}</td><td>${esc(h.type.replace(/_/g, " "))}</td><td>${esc(h.status || "")}</td></tr>`).join("")}</table></div></div></div>`;
+}
+async function renderDecision(id) {
+  const ds = await api("/api/decisions"); const d = ds.find(x => x.id === id);
+  $("#sub").textContent = d ? `Decision · ${d.project_id}` : "Not found";
+  $("#view").innerHTML = d ? `<div style="max-width:760px">${decisionCard(d, true)}</div>` : '<p class="empty">Decision not found.</p>';
+}
+async function renderTasks() {
+  const q = new URLSearchParams(location.hash.split("?")[1] || "");
+  const ts = await api("/api/tasks?" + q.toString());
+  $("#sub").textContent = "All tasks, newest change first.";
+  $("#view").innerHTML = `<form id="taskfilter" class="row" style="margin-bottom:12px"><input name="q" placeholder="Search" value="${esc(q.get("q") || "")}" style="width:220px">
+  <select name="status" style="width:auto"><option value="">Any status</option>${["inbox", "ready", "in_progress", "blocked", "needs_review", "done", "canceled"].map(s => `<option ${s === q.get("status") ? "selected" : ""}>${s}</option>`).join("")}</select>
+  <select name="owner_id" style="width:auto"><option value="">Any owner</option>${[OWNER, "claude", "gpt", "gemini"].map(o => `<option value="${esc(o)}" ${o === q.get("owner_id") ? "selected" : ""}>${NAMES[o]}</option>`).join("")}</select><button>Filter</button></form>
+  ${ts.map(taskCard).join("") || '<p class="empty">No tasks match.</p>'}`;
+}
+async function renderActivity() {
+  const ev = await api("/api/activity?limit=300");
+  $("#sub").textContent = "Every recorded event, newest first. This is the audit trail.";
+  $("#view").innerHTML = `<div class="tablewrap"><table><tr><th>#</th><th>When</th><th>Who</th><th>Event</th><th>Summary</th><th>Source</th></tr>
+  ${ev.map(e => `<tr><td>${e.seq}</td><td>${esc(fmt(e.at))}</td><td>${who(e.actor)}</td><td>${esc(e.type.replace(/_/g, " "))}</td><td>${esc(e.summary)}</td><td>${esc(e.source_system)}${e.provenance?.confidence ? " · " + esc(e.provenance.confidence) : ""}</td></tr>`).join("")}</table></div>`;
+}
+
+// ---------- router, polling, events ----------
+let seq = -1, busy = false, again = false;
+async function route(force) {
+  const h = location.hash.replace(/^#/, "") || "/";
+  const [path] = h.split("?"); const parts = path.split("/").filter(Boolean);
+  document.querySelectorAll("nav a").forEach(a => a.setAttribute("aria-current", a.dataset.nav === (parts[0] || "home") ? "page" : "false"));
+  if (busy) { again = true; return; } busy = true;
+  try {
+    if (!parts.length) await renderHome();
+    else if (parts[0] === "threads" && parts[1]) await renderThread(parts[1]);
+    else if (parts[0] === "threads") await renderThreads();
+    else if (parts[0] === "tasks" && parts[1]) await renderTask(parts[1]);
+    else if (parts[0] === "tasks") await renderTasks();
+    else if (parts[0] === "decisions" && parts[1]) await renderDecision(parts[1]);
+    else if (parts[0] === "activity") await renderActivity();
+    $("#offline").classList.add("hidden");
+  } catch (e) { if (e.message !== "signed out") { $("#offline").textContent = "Could not load: " + e.message; $("#offline").classList.remove("hidden"); } }
+  finally { busy = false; }
+  if (again) { again = false; await route(); }  // the hash changed while rendering
+}
+async function poll() {
+  try {
+    const v = await api("/api/version");
+    $("#offline").classList.add("hidden");
+    const typing = document.activeElement && ["TEXTAREA", "INPUT", "SELECT"].includes(document.activeElement.tagName) && document.activeElement.id !== "composer";
+    if (seq === -1) seq = v.seq;  // route() already rendered this state
+    else if (v.seq !== seq && !typing) { seq = v.seq; await route(); }
+  } catch (e) { if (e.message !== "signed out") { $("#offline").textContent = "Workstation server unreachable — showing the last loaded state. Start it with `uv run ws serve`."; $("#offline").classList.remove("hidden"); } }
+}
+async function refresh() { const v = await api("/api/version"); seq = v.seq; await route(); }
+window.addEventListener("hashchange", () => route());
+document.addEventListener("click", async ev => {
+  const b = ev.target.closest("button"); if (!b) return;
+  const err = m => { const el = $("#threaderr") || $("#taskerr") || $("#editerr"); if (el) el.textContent = m; else alert(m); };
+  try {
+    if (b.dataset.task) { b.disabled = true; await api(`/api/tasks/${b.dataset.task}`, {method: "PATCH", body: {expected_version: +b.dataset.v, changes: {status: b.dataset.status}}}); }
+    else if (b.dataset.approve || b.dataset.resolve) {
+      if (!b.dataset.armed) { b.dataset.armed = "1"; b.dataset.text = b.textContent; b.textContent = b.dataset.approve ? `Confirm: approve “${b.dataset.label}”` : `Confirm ${b.dataset.s === "deferred" ? "defer" : "reject"}`;
+        setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = b.dataset.text; } }, 5000); return; }
+      b.disabled = true;
+      if (b.dataset.approve) await api(`/api/decisions/${b.dataset.approve}/resolve`, {method: "POST", body: {status: "approved", option_id: b.dataset.o}});
+      else await api(`/api/decisions/${b.dataset.resolve}/resolve`, {method: "POST", body: {status: b.dataset.s}}); }
+    else if (b.dataset.insert) { const ta = $("#composer"); ta.value = (ta.value && !ta.value.endsWith(" ") ? ta.value + " " : ta.value) + b.dataset.insert; ta.focus(); return; }
+    else if (b.dataset.propose) { b.disabled = true; await api("/api/tasks", {method: "POST", body: {...JSON.parse(b.dataset.propose), status: "inbox"}}); }
+    else if (b.id === "send") { const ta = $("#composer"), text = ta.value.trim(); if (!text) return; b.disabled = true; const id = encodeURIComponent(location.hash.split("/")[2]);
+      await api(`/api/threads/${id}/messages`, {method: "POST", body: {text, idempotency_key: crypto.randomUUID()}}); ta.value = ""; }
+    else if (b.id === "critique") { b.disabled = true; await api(`/api/threads/${encodeURIComponent(location.hash.split("/")[2])}/critique`, {method: "POST"}); }
+    else if (b.id === "draft") { showDraft(await api(`/api/threads/${encodeURIComponent(location.hash.split("/")[2])}/decision-draft`)); return; }
+    else if (b.id === "canceldraft") { draftCache = null; $("#draftbox").innerHTML = ""; return; }
+    else return;
+    await refresh();
+  } catch (e) { err(e.message); b.disabled = false; }
+});
+document.addEventListener("keydown", ev => { if (ev.target.id === "composer" && ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); $("#send").click(); } });
+document.addEventListener("submit", async ev => {
+  ev.preventDefault(); const f = ev.target, fd = Object.fromEntries(new FormData(f));
+  try {
+    if (f.id === "newthread") { const t = await api("/api/threads", {method: "POST", body: {title: fd.title, project_id: fd.project_id, idempotency_key: crypto.randomUUID()}}); location.hash = `#/threads/${t.id}`; return; }
+    if (f.id === "newtask") { await api("/api/tasks", {method: "POST", body: {title: fd.title, next_action: fd.next_action, project_id: fd.project_id, owner: fd.owner, priority: fd.priority, status: "ready",
+      due_at: fd.due || null, due_tz: fd.due ? Intl.DateTimeFormat().resolvedOptions().timeZone : null, idempotency_key: crypto.randomUUID()}}); }
+    if (f.id === "edittask") { const d = await api(`/api/tasks/${f.dataset.id}`); const changes = {};
+      for (const k of ["title", "next_action", "status", "owner", "priority"]) if (fd[k] !== (d[k] ?? "")) changes[k] = fd[k];
+      if (Object.keys(changes).length) await api(`/api/tasks/${f.dataset.id}`, {method: "PATCH", body: {expected_version: +f.dataset.v, changes}}); }
+    if (f.id === "decform") { const d = draftCache; await api("/api/decisions", {method: "POST", body: {question: fd.question, context: fd.context, project_id: d.project_id, thread_id: d.thread_id,
+      options: fd.options.split("\n").map(s => s.trim()).filter(Boolean).map(label => ({label})), recommendations: d.recommendations, evidence: d.evidence, urgency: fd.urgency, follow_up_owner: fd.follow_up_owner,
+      idempotency_key: crypto.randomUUID()}}); draftCache = null; }
+    if (f.id === "taskfilter") { const q = new URLSearchParams(Object.entries(fd).filter(([, v]) => v)); location.hash = "#/tasks?" + q; return; }
+    await refresh();
+  } catch (e) { const el = f.querySelector(".err") || $("#threaderr"); if (el) el.textContent = e.message; else alert(e.message); }
+});
+(async () => {
+  try {
+    const p = await api("/api/principals");
+    OWNER = p.owner;
+    for (const [id, a] of Object.entries(p.principals)) NAMES[id] = a.display;
+  } catch (e) { /* signed out: route() shows how to sign in */ }
+  route(); setInterval(poll, 2000);
+})();
+</script>
+</body>
+</html>
