@@ -142,3 +142,7 @@ Not built yet:
 - merging near-duplicate options in decision drafts
 - multi-user access
 - Windows support
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).
