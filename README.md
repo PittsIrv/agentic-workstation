@@ -48,6 +48,7 @@ With `uv run ws serve --fake` running and signed in (no agent CLIs needed):
 2. **Draft decision card**: options the assistants both proposed are merged into one. Type the **Question**, then **Create decision card**.
 3. On the card (also on Home) click **Approve** on an option, then click the confirm button that replaces it. Approval creates one task for Claude, shown under **Tasks**.
 4. Work reaches the owner only with evidence. As the agent (`uv run ws token claude` once), link a commit and move the task through the allowed states:
+   The task id is in the address bar when you open the task (`#/tasks/<task-id>`).
    ```bash
    uv run ws task <task-id> --as claude --commit <sha> --repo .
    uv run ws task <task-id> --as claude --status in_progress
