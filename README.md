@@ -10,9 +10,10 @@ It runs on your machine, stores everything in one SQLite file, and uses the Clau
 
 - **Home:** your next action, the most urgent decision, agent status, and an honest list of which sources are connected.
 - **Threads:** `@claude` and `@gpt` mentions. Each reply shows which posts the agent saw. One critique round per thread, and a budget of agent turns.
-- **Decision cards:** options with each agent's position. Only the owner can approve, reject or defer. An approval creates one engineering task.
+- **Decision cards:** options with each agent's position. Near-duplicate options from the agents are merged and show both sources. Only the owner can approve, reject or defer. An approval creates one engineering task.
 - **Tasks:** owner, due date with time zone, linked artifacts (commits verified with `git cat-file`), reviews and a full history. Agents cannot mark work done.
 - **Event intake:** other assistants or scripts report tasks, blocks and decisions through one authenticated endpoint, with idempotent delivery ([docs/events.md](docs/events.md)).
+- **Tickets:** open tickets from a Markdown file you point it at, shown on Home.
 - **Activity:** every change, who made it, and from which source.
 
 ## Requirements
@@ -39,7 +40,11 @@ Try it without any agent installed: `uv run ws serve --fake` answers mentions wi
 
 ## Configuration
 
-`data/config.toml` sets the owner's id and name, the display time zone, the port, the Claude and Codex models, and the coverage list shown on Home. [config.example.toml](config.example.toml) documents each key. Set `owner.id` before the first start: it is written into every event.
+`data/config.toml` sets the owner's id and name, the display time zone, the port, the Claude and Codex models, the coverage list shown on Home, and an optional ticket file. [config.example.toml](config.example.toml) documents each key. Set `owner.id` before the first start: it is written into every event.
+
+### Ticket file on Home
+
+Point `[tickets] path` at a Markdown file with blocks like `## T-0001 · Title` followed by `- status:`, `- priority:` and `- repo:` lines, and Home lists the open ones (read-only; the workstation never writes to it). A ticket is closed when the first word of its status is `done`, `closed` or `canceled`; change that with `closed = [...]`. A missing or unreadable file shows as unavailable instead of breaking Home.
 
 ## How the agents are run
 
@@ -131,6 +136,7 @@ The source is in `src/workstation`:
 - `app.py`: HTTP API
 - `cli.py`: the `ws` command
 - `config.py`: settings
+- `tickets.py`: read-only Markdown ticket file
 - `static/index.html`: the dashboard
 
 ## Status
@@ -139,7 +145,6 @@ Early (0.1). It works end to end for one owner with Claude Code and Codex.
 
 Not built yet:
 - Gemini, mail and calendar bridges
-- merging near-duplicate options in decision drafts
 - multi-user access
 - Windows support
 
