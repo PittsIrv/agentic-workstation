@@ -244,7 +244,7 @@ async function renderTask(id) {
   <div class="card"><span class="k">Edit</span><form id="edittask" data-id="${esc(t.id)}" data-v="${t.version}" class="row" style="flex-direction:column;align-items:stretch">
   <input name="title" value="${esc(t.title)}"><input name="next_action" value="${esc(t.next_action)}" placeholder="Next action">
   <div class="row" style="margin:0"><select name="status" style="width:auto">${["inbox", "ready", "in_progress", "blocked", "needs_review", "done", "canceled"].map(s => `<option ${s === t.status ? "selected" : ""}>${s}</option>`).join("")}</select>
-  <select name="owner" style="width:auto">${[OWNER, "claude", "gpt", "gemini"].map(o => `<option value="${esc(o)}" ${o === t.owner ? "selected" : ""}>${NAMES[o]}</option>`).join("")}</select>
+  <select name="owner" style="width:auto">${[OWNER, "claude", "gpt", "gemini"].map(o => `<option value="${esc(o)}" ${o === t.owner ? "selected" : ""}>${esc(NAMES[o])}</option>`).join("")}</select>
   <select name="priority" style="width:auto">${["P0", "P1", "P2", "P3"].map(p => `<option ${p === t.priority ? "selected" : ""}>${p}</option>`).join("")}</select><button class="primary">Save</button><span class="err" id="editerr"></span></div></form></div></div>
   <div class="card"><span class="k">History (audit)</span><div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Event</th><th>Status after</th></tr>
   ${t.history.slice().reverse().map(h => `<tr><td>${esc(fmt(h.at))}</td><td>${who(h.actor)}</td><td>${esc(h.type.replace(/_/g, " "))}</td><td>${esc(h.status || "")}</td></tr>`).join("")}</table></div></div></div>`;
@@ -260,7 +260,7 @@ async function renderTasks() {
   $("#sub").textContent = "All tasks, newest change first.";
   $("#view").innerHTML = `<form id="taskfilter" class="row" style="margin-bottom:12px"><input name="q" placeholder="Search" value="${esc(q.get("q") || "")}" style="width:220px">
   <select name="status" style="width:auto"><option value="">Any status</option>${["inbox", "ready", "in_progress", "blocked", "needs_review", "done", "canceled"].map(s => `<option ${s === q.get("status") ? "selected" : ""}>${s}</option>`).join("")}</select>
-  <select name="owner_id" style="width:auto"><option value="">Any owner</option>${[OWNER, "claude", "gpt", "gemini"].map(o => `<option value="${esc(o)}" ${o === q.get("owner_id") ? "selected" : ""}>${NAMES[o]}</option>`).join("")}</select><button>Filter</button></form>
+  <select name="owner_id" style="width:auto"><option value="">Any owner</option>${[OWNER, "claude", "gpt", "gemini"].map(o => `<option value="${esc(o)}" ${o === q.get("owner_id") ? "selected" : ""}>${esc(NAMES[o])}</option>`).join("")}</select><button>Filter</button></form>
   ${ts.map(taskCard).join("") || '<p class="empty">No tasks match.</p>'}`;
 }
 async function renderActivity() {
