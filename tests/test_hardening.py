@@ -177,3 +177,67 @@ def test_option_merge_rule():
     assert not same(t("Local core"), t("Local core with a hosted sync service"))
     assert not same(t("Fork the UI"), t("Fork the backend"))
     assert not same(t(""), t(""))
+
+
+# ---- ticket file importer ----------------------------------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+from workstation import tickets  # noqa: E402
+
+FIXTURE = Path(__file__).parent / "fixtures" / "tickets.md"
+
+
+def test_ticket_parser_reads_blocks_and_skips_templates():
+    got = tickets.parse(FIXTURE.read_text())
+    assert [t["id"] for t in got] == ["T-0003", "T-0002", "T-0001", "T-0004"]  # template block in a fence is skipped
+    t = got[0]
+    assert (t["title"], t["state"], t["priority"], t["repo"], t["worker"]) == \
+        ("Fix the login page", "dispatched", "P1", "web", "web-session")
+    assert got[2]["state"] == "closed"
+
+
+def test_ticket_file_lists_open_tickets_by_priority_and_never_writes(tmp_path):
+    src = tmp_path / "t.md"
+    src.write_text(FIXTURE.read_text())
+    before = (src.read_bytes(), src.stat().st_mtime_ns)
+    f = tickets.TicketFile(str(src), title="Router tickets")
+    r = f.read()
+    assert r["state"] == "ok" and r["total"] == 4
+    assert [t["id"] for t in r["open"]] == ["T-0002", "T-0003", "T-0004"]
+    src.chmod(0o444)
+    assert f.read()["state"] == "ok"
+    assert (src.read_bytes(), src.stat().st_mtime_ns) == before
+    src.chmod(0o644)
+    src.write_text(FIXTURE.read_text().replace("waiting-owner", "done"))
+    assert [t["id"] for t in f.read()["open"]] == ["T-0002", "T-0003"]  # re-read after the file changed
+
+
+def test_ticket_file_reports_missing_and_unconfigured(tmp_path):
+    assert tickets.TicketFile(None).read()["state"] == "not_configured"
+    r = tickets.TicketFile(str(tmp_path / "nope.md")).read()
+    assert r["state"] == "unavailable" and r["open"] == []
+
+
+def test_home_shows_open_tickets_from_the_configured_file(tmp_path, agents):
+    from conftest import make
+    (tmp_path / "config.toml").write_text(f'[tickets]\npath = "{FIXTURE}"\ntitle = "Router tickets"\n')
+    app, c, tokens = make(tmp_path, agents)
+    try:
+        h = c.get("/api/home", headers=H(tokens)).json()["tickets"]
+        assert h["title"] == "Router tickets" and h["state"] == "ok"
+        assert [t["id"] for t in h["open"]] == ["T-0002", "T-0003", "T-0004"]
+        assert c.post("/api/tickets", headers=H(tokens), json={}).status_code in (404, 405)  # no write route
+    finally:
+        app.state.ws.close()
+
+
+def test_a_bad_tickets_path_does_not_break_home(tmp_path, agents):
+    from conftest import make
+    (tmp_path / "config.toml").write_text('[tickets]\npath = "/nonexistent/tickets.md"\n')
+    app, c, tokens = make(tmp_path, agents)
+    try:
+        r = c.get("/api/home", headers=H(tokens))
+        assert r.status_code == 200 and r.json()["tickets"]["state"] == "unavailable"
+    finally:
+        app.state.ws.close()

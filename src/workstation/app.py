@@ -25,6 +25,7 @@ from .principals import owner as owner_id
 from .runners import Dispatcher, Runner, build_prompt, default_runners, parse_reply
 from .service import Conflict, Forbidden, Invalid, NotFound, Service
 from .store import Store
+from .tickets import TicketFile
 
 STATIC = Path(__file__).parent / "static"
 COOKIE = "ws_session"
@@ -135,6 +136,8 @@ class Workstation:
         self.config = configuration.load(self.data)
         configure_owner(self.config.owner_id, self.config.owner_name)
         views.DISPLAY_TZ, views.COVERAGE = self.config.timezone, self.config.coverage
+        views.TICKETS = TicketFile(self.config.tickets_path or None, tuple(self.config.tickets_closed),
+                                   self.config.tickets_title)
         self._lock_file = open(self.data / "server.lock", "a")
         try:
             fcntl.flock(self._lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)

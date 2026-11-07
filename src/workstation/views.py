@@ -13,6 +13,7 @@ PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2, "P3": 3}
 
 # Sources the dashboard can see, stated honestly; set from config at start.
 COVERAGE: list[dict] = []
+TICKETS: dict | None = None  # a tickets.TicketFile, set from config at start
 
 
 def _bucket(t: dict, now: datetime, tz: ZoneInfo) -> str:
@@ -92,7 +93,8 @@ def home(svc: Service, agents: list[dict], now: datetime | None = None) -> dict:
                                  "text": last["text"][:140]} if last else None})
     return {"now": now.isoformat(timespec="minutes"), "tz": DISPLAY_TZ, "actions": actions,
             "decisions": [decision_card(d) for d in pending], "projects": projects, "agents": agents,
-            "threads": threads, "coverage": COVERAGE, "seq": len(svc.s.events)}
+            "threads": threads, "coverage": COVERAGE,
+            "tickets": (TICKETS.read() if TICKETS else {"state": "not_configured", "open": [], "total": 0}), "seq": len(svc.s.events)}
 
 
 def decision_card(d: dict) -> dict:

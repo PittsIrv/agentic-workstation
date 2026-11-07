@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .tickets import DEFAULT_CLOSED
+
 DEFAULT_COVERAGE = [
     {"source": "Claude Code (threads, engineering tasks)", "state": "connected"},
     {"source": "GPT via Codex CLI (threads, reviews)", "state": "connected"},
@@ -27,6 +29,9 @@ class Config:
     claude_model: str = "sonnet"
     gpt_model: str = "gpt-6-astra"
     gpt_effort: str = "medium"
+    tickets_path: str = ""
+    tickets_title: str = "Tickets"
+    tickets_closed: list[str] = field(default_factory=lambda: list(DEFAULT_CLOSED))
     coverage: list[dict] = field(default_factory=lambda: [dict(c) for c in DEFAULT_COVERAGE])
 
 
@@ -43,6 +48,11 @@ def load(data_dir: Path | str) -> Config:
     cfg.claude_model = claude.get("model", cfg.claude_model)
     cfg.gpt_model = gpt.get("model", cfg.gpt_model)
     cfg.gpt_effort = gpt.get("effort", cfg.gpt_effort)
+    tk = raw.get("tickets", {})
+    cfg.tickets_path = str(tk.get("path", cfg.tickets_path))
+    cfg.tickets_title = str(tk.get("title", cfg.tickets_title))
+    if "closed" in tk:
+        cfg.tickets_closed = [str(x) for x in tk["closed"]]
     if "coverage" in raw:
         cfg.coverage = [{"source": str(c["source"]), "state": str(c["state"])} for c in raw["coverage"]]
     validate(cfg, path)

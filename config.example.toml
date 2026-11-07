@@ -36,3 +36,11 @@ state = "connected"
 [[coverage]]
 source = "Mail and calendar"
 state = "not connected; nothing from mail is shown"
+
+# Optional: show the open tickets of a Markdown file on Home. Read-only; the file is never written.
+# Blocks look like "## T-0001 · Title" followed by "- status: ...", "- priority: ...", "- repo: ..." lines.
+# A ticket is closed when the first word of its status is in `closed`.
+# [tickets]
+# path = "~/notes/tickets.md"
+# title = "Tickets"
+# closed = ["done", "closed", "canceled"]

@@ -157,6 +157,7 @@ async function renderHome() {
       <a href="#/threads">All threads / start one →</a></section>
   </div>
   <section><h2>Projects</h2><div class="strip">${h.projects.map(p => `<div class="tile"><span class="k">${esc(p.stage || "project")}</span><span class="big">${esc(p.name)}</span><div class="meta">${esc(p.goal || "")}</div><div class="meta"><span>${p.open} open</span><span>${p.blocked} blocked</span><span>${p.done} done</span></div>${p.next ? `<div class="meta">Next: ${esc(p.next.title)} (${esc(p.next.owner)})</div>` : ""}${p.last_progress ? `<div class="meta">Last change ${esc(ago(p.last_progress.at))} by ${who(p.last_progress.actor)}</div>` : ""}</div>`).join("")}</div></section>
+  ${ticketsSection(h.tickets)}
   <section><h2>What this dashboard can see</h2><div class="tile"><ul class="cov">${h.coverage.map(c => `<li>${esc(c.source)} — <b>${esc(c.state)}</b></li>`).join("")}</ul></div></section>`;
 }
 function taskForm(projects) {
@@ -211,6 +212,13 @@ function msgView(m, t) {
   const sugg = (m.suggested_mentions || []).map(a => `<button data-insert="@${esc(a)} ">Ask ${esc(NAMES[a] || a)}</button>`).join("");
   return `<div class="msg ${esc(m.author)}${m.author === OWNER ? " human" : ""}" id="m${m.seq}"><div class="hd"><span>#${m.seq}</span>${who(m.author)}${label ? pill(label) : ""}${rt.runtime ? `<span class="at">${esc(rt.runtime)}${rt.model ? " · " + esc(rt.model) : ""}</span>` : ""}${saw ? `<span class="at">${esc(saw)}</span>` : ""}<span class="at">${esc(fmt(m.at))}</span></div>
   <div class="body">${md(m.text)}</div>${struct}${sugg ? `<div class="row">${sugg}<span class="note">Agent suggested; nothing is sent until you ask.</span></div>` : ""}</div>`;
+}
+function ticketsSection(t) {
+  if (!t || t.state === "not_configured") return "";
+  const head = `<h2>${esc(t.title || "Tickets")} <span class="note">(read-only)</span></h2>`;
+  if (t.state !== "ok") return `<section>${head}<div class="tile"><span class="empty">Ticket file unavailable: ${esc(t.reason || "unknown")}</span></div></section>`;
+  const rows = t.open.map(x => `<tr><td style="white-space:nowrap">${esc(x.id)}</td><td>${esc(x.title)}</td><td>${esc(x.priority || "")}</td><td>${esc(x.state)}</td><td>${esc(x.repo || "")}</td></tr>`).join("");
+  return `<section>${head}<div class="tile">${rows ? `<table><tr><th>Ticket</th><th>Title</th><th>Priority</th><th>Status</th><th>Repo</th></tr>${rows}</table>` : '<span class="empty">No open tickets.</span>'}<div class="note">${t.open.length} open of ${t.total}</div></div></section>`;
 }
 function showDraft(d) {
   draftCache = d;
