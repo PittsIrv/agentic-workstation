@@ -241,3 +241,30 @@ def test_a_bad_tickets_path_does_not_break_home(tmp_path, agents):
         assert r.status_code == 200 and r.json()["tickets"]["state"] == "unavailable"
     finally:
         app.state.ws.close()
+
+
+def test_filler_only_option_labels_merge_when_identical(ws, agents):
+    app, c, tokens = ws
+    agents["claude"].options = ["Use it", "Wait"]
+    agents["gpt"].options = ["use it", "Wait"]
+    th = c.post("/api/threads", headers=H(tokens), json={"title": "t", "project_id": "workstation"}).json()
+    c.post(f"/api/threads/{th['id']}/messages", headers=H(tokens), json={"text": "@claude @gpt which way?"})
+    from conftest import wait
+    wait(lambda: sum(1 for m in app.state.ws.store.state.messages[th["id"]] if m["author"] in ("claude", "gpt")) == 2)
+    draft = c.get(f"/api/threads/{th['id']}/decision-draft", headers=H(tokens)).json()
+    assert [o["label"] for o in draft["options"]] == ["Use it", "Wait"]
+    assert {s["agent"] for s in draft["options"][0]["sources"]} == {"claude", "gpt"}
+
+
+def test_message_key_reused_with_other_structured_or_dispatch_is_refused(ws):
+    import pytest
+    from workstation.service import Conflict
+    app, c, tokens = ws
+    svc = app.state.ws.svc
+    th = c.post("/api/threads", headers=H(tokens), json={"title": "t", "project_id": "workstation"}).json()
+    svc.post_message("owner", th["id"], "hi", idempotency_key="m1", structured={"a": 1})
+    assert svc.post_message("owner", th["id"], "hi", idempotency_key="m1", structured={"a": 1})
+    with pytest.raises(Conflict):
+        svc.post_message("owner", th["id"], "hi", idempotency_key="m1", structured={"a": 2})
+    with pytest.raises(Conflict):
+        svc.post_message("owner", th["id"], "hi", idempotency_key="m1", structured={"a": 1}, dispatch_id="d1")
