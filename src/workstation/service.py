@@ -491,7 +491,9 @@ class Service:
         msgs = self.s.messages[thread_id]
         human_q = next((m["text"] for m in reversed(msgs) if is_human(m["author"])), th["title"])
         options, recs = [], {}
-        for m in msgs:
+        # Fixed agent order, not arrival order: replies come back concurrently, and the draft must not depend on who was faster.
+        order = {a: i for i, a in enumerate(AGENTS)}
+        for m in sorted(msgs, key=lambda m: (order.get(m["author"], len(order)), m["seq"])):
             st = m.get("structured") or {}
             if AGENTS.get(m["author"], {}).get("kind") != "agent" or not m.get("dispatch_id"):
                 continue
