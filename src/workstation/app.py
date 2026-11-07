@@ -195,6 +195,8 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     if recover:
         ws.dispatcher.recover()
         start_backups(ws)
+        if not ws.svc.s.projects:  # a thread needs a project; give a fresh install one to start in
+            ws.svc.upsert_project(owner_id(), "general", "General", idempotency_key="seed-general-project")
 
     @app.exception_handler(Forbidden)
     async def _f(_, e): return JSONResponse({"error": str(e)}, 403)

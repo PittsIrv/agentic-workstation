@@ -89,7 +89,7 @@ async function api(path, opts = {}) {
     body: opts.body ? JSON.stringify(opts.body) : undefined});
   if (r.status === 401) { signedOut(); throw new Error("signed out"); }
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error || j.detail || r.statusText);
+  if (!r.ok) throw new Error(j.error || (typeof j.detail === "string" ? j.detail : j.detail ? JSON.stringify(j.detail) : r.statusText));
   return j;
 }
 function signedOut() {
