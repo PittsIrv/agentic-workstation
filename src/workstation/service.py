@@ -502,7 +502,7 @@ class Service:
                 if not (isinstance(o, str) and o.strip()):
                     continue
                 key = option_tokens(o)
-                exact = o.strip().lower()
+                exact = " ".join(re.findall(r"[a-z0-9]+", o.lower()))
                 # A label made only of filler words has no content words to compare; match it only when identical.
                 hit = next((x for x in options if same_option(key, x["_key"]) or
                             (not (key and x["_key"]) and exact == x["_exact"])), None)
@@ -515,7 +515,8 @@ class Service:
                 recs[m["author"]] = {"agent": m["author"], "summary": st["position"], "message_id": m["id"],
                                      "mode": (self.s.dispatches.get(m.get("dispatch_id") or "", {}) or {}).get("mode")}
         for o in options:
-            o.pop("_key"); o.pop("_exact")
+            o.pop("_key")
+            o.pop("_exact")
             names = [AGENTS[x["agent"]]["display"] for x in o["sources"]]
             o["detail"] = "Proposed by " + " and ".join(names)
             if len({x["label"].lower() for x in o["sources"]}) > 1:

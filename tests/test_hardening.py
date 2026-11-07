@@ -245,8 +245,10 @@ def test_a_bad_tickets_path_does_not_break_home(tmp_path, agents):
 
 def test_filler_only_option_labels_merge_when_identical(ws, agents):
     app, c, tokens = ws
+    from workstation.service import option_tokens
+    assert not option_tokens("Use it")  # filler only: this exercises the exact-match fallback
     agents["claude"].options = ["Use it", "Wait"]
-    agents["gpt"].options = ["use it", "Wait"]
+    agents["gpt"].options = ["use it.", "Wait"]
     th = c.post("/api/threads", headers=H(tokens), json={"title": "t", "project_id": "workstation"}).json()
     c.post(f"/api/threads/{th['id']}/messages", headers=H(tokens), json={"text": "@claude @gpt which way?"})
     from conftest import wait
