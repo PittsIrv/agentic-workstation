@@ -91,9 +91,27 @@ def home(svc: Service, agents: list[dict], now: datetime | None = None) -> dict:
                         "pending": sum(d["status"] in ("queued", "running") for d in ds),
                         "last": {"author": AGENTS.get(last["author"], {}).get("display", last["author"]),
                                  "text": last["text"][:140]} if last else None})
-    return {"now": now.isoformat(timespec="minutes"), "tz": DISPLAY_TZ, "actions": actions,
-            "decisions": [decision_card(d) for d in pending], "projects": projects, "agents": agents,
-            "threads": threads, "coverage": COVERAGE,
+    decisions = [decision_card(d) for d in pending]
+    if decisions:
+        d = decisions[0]
+        nxt = {"kind": "decision", "id": d["id"], "text": d["question"],
+               "meta": f"{len(d['options'])} options · {len(d['recommendations'])} agent position(s)"}
+    elif actions:
+        a = actions[0]
+        nxt = {"kind": "task", "id": a["id"], "text": a["action"],
+               "meta": f"{a['title']} · {a['project']}" + (f" · due {a['due_local']}" if a.get("due_local") else "")}
+    else:
+        nxt = None
+    by_agent = {a["id"]: a for a in agents}
+    coverage = []
+    for c in COVERAGE:
+        a = by_agent.get(c.get("agent") or "")
+        state = c["state"] if a is None else ("connected" if a["available"] else
+                                              a["reason"] + (" · session pickup" if a.get("pull_fallback") else ""))
+        coverage.append({"source": c["source"], "state": state})
+    return {"now": now.isoformat(timespec="minutes"), "tz": DISPLAY_TZ, "actions": actions, "next": nxt,
+            "decisions": decisions, "projects": projects, "agents": agents,
+            "threads": threads, "coverage": coverage,
             "tickets": (TICKETS.read() if TICKETS else {"state": "not_configured", "open": [], "total": 0}), "seq": len(svc.s.events)}
 
 
