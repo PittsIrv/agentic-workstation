@@ -430,7 +430,8 @@ class Service:
     def post_message(self, actor: str, thread_id: str, text: str, *, idempotency_key: str | None = None,
                      dispatch_id: str | None = None, structured: dict | None = None,
                      runtime: dict | None = None) -> dict:
-        fp = self._fp(op="message", actor=actor, thread_id=thread_id, text=text)
+        fp = self._fp(op="message", actor=actor, thread_id=thread_id, text=text, dispatch_id=dispatch_id,
+                      structured=structured or {})
         if (dup := self._dup(idempotency_key, "message_posted", fp=fp, thread_id=thread_id)):
             return next(m for m in self.s.messages[thread_id] if m["event_id"] == dup["event_id"])
         th = self._thread(thread_id)
@@ -501,9 +502,12 @@ class Service:
                 if not (isinstance(o, str) and o.strip()):
                     continue
                 key = option_tokens(o)
-                hit = next((x for x in options if same_option(key, x["_key"])), None)
+                exact = o.strip().lower()
+                # A label made only of filler words has no content words to compare; match it only when identical.
+                hit = next((x for x in options if same_option(key, x["_key"]) or
+                            (not (key and x["_key"]) and exact == x["_exact"])), None)
                 if hit is None:
-                    hit = {"label": o.strip(), "sources": [], "_key": key}
+                    hit = {"label": o.strip(), "sources": [], "_key": key, "_exact": exact}
                     options.append(hit)
                 if m["author"] not in {x["agent"] for x in hit["sources"]}:
                     hit["sources"].append({"agent": m["author"], "label": o.strip(), "message_id": m["id"]})
@@ -511,7 +515,7 @@ class Service:
                 recs[m["author"]] = {"agent": m["author"], "summary": st["position"], "message_id": m["id"],
                                      "mode": (self.s.dispatches.get(m.get("dispatch_id") or "", {}) or {}).get("mode")}
         for o in options:
-            o.pop("_key")
+            o.pop("_key"); o.pop("_exact")
             names = [AGENTS[x["agent"]]["display"] for x in o["sources"]]
             o["detail"] = "Proposed by " + " and ".join(names)
             if len({x["label"].lower() for x in o["sources"]}) > 1:
