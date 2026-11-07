@@ -40,6 +40,21 @@ The first start creates `data/workstation.db`, your owner token (`data/secrets/<
 
 Try it without any agent installed: `uv run ws serve --fake` answers mentions with canned replies.
 
+## First walkthrough
+
+With `uv run ws serve --fake` running and signed in (no agent CLIs needed):
+
+1. **Threads** → type a topic → **Create**. Mention both assistants (`@claude @gpt your question`) and **Send**; each replies on its own.
+2. **Draft decision card**: options the assistants both proposed are merged into one. Type the **Question**, then **Create decision card**.
+3. On the card (also on Home) click **Approve** on an option, then click the confirm button that replaces it. Approval creates one task for Claude, shown under **Tasks**.
+4. Work reaches the owner only with evidence. As the agent (`uv run ws token claude` once), link a commit and move the task through the allowed states:
+   ```bash
+   uv run ws task <task-id> --as claude --commit <sha> --repo .
+   uv run ws task <task-id> --as claude --status in_progress
+   uv run ws task <task-id> --as claude --status needs_review
+   ```
+   A task must be `in_progress` before `needs_review`, and `needs_review` needs a linked artifact. Then **Accept** it under **Tasks**.
+
 ## Configuration
 
 `data/config.toml` sets the owner's id and name, the display time zone, the port, the Claude and Codex models, the coverage list shown on Home, and an optional ticket file. [config.example.toml](config.example.toml) documents each key. Set `owner.id` before the first start: it is written into every event.
