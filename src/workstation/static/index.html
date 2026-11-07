@@ -218,6 +218,7 @@ function showDraft(d) {
   <form id="decform"><label class="k" for="dq">Question</label><input id="dq" name="question" value="${esc(d.question)}" required>
   <label class="k" for="dc" style="margin-top:8px">Context</label><input id="dc" name="context" value="${esc(d.context || "")}" placeholder="What is at stake (optional)">
   <span class="k" style="margin-top:8px">Options (one per line)</span><textarea name="options">${esc(d.options.map(o => o.label).join("\n"))}</textarea>
+  <div class="recs"><span class="k">Where the options came from</span>${d.options.map(o => `<div>${esc(o.label)}: ${o.sources.map(x => who(x.agent)).join(" ")}</div>`).join("") || '<span class="empty">none</span>'}</div>
   <div class="recs"><span class="k">Positions carried over</span>${d.recommendations.map(r => `<div>${who(r.agent)}: ${esc(r.summary)}</div>`).join("") || '<span class="empty">none</span>'}</div>
   <div class="row"><select name="urgency" style="width:auto"><option value="normal">Normal</option><option value="high">Urgent</option></select>
   <select name="follow_up_owner" style="width:auto"><option value="claude">Approval → task for Claude</option><option value="${esc(OWNER)}">Approval → task for me</option></select>
@@ -325,7 +326,7 @@ document.addEventListener("submit", async ev => {
       for (const k of ["title", "next_action", "status", "owner", "priority"]) if (fd[k] !== (d[k] ?? "")) changes[k] = fd[k];
       if (Object.keys(changes).length) await api(`/api/tasks/${f.dataset.id}`, {method: "PATCH", body: {expected_version: +f.dataset.v, changes}}); }
     if (f.id === "decform") { const d = draftCache; await api("/api/decisions", {method: "POST", body: {question: fd.question, context: fd.context, project_id: d.project_id, thread_id: d.thread_id,
-      options: fd.options.split("\n").map(s => s.trim()).filter(Boolean).map(label => ({label})), recommendations: d.recommendations, evidence: d.evidence, urgency: fd.urgency, follow_up_owner: fd.follow_up_owner,
+      options: fd.options.split("\n").map(s => s.trim()).filter(Boolean).map(label => ({label, detail: (d.options.find(o => o.label === label) || {}).detail || ""})), recommendations: d.recommendations, evidence: d.evidence, urgency: fd.urgency, follow_up_owner: fd.follow_up_owner,
       idempotency_key: crypto.randomUUID()}}); draftCache = null; }
     if (f.id === "taskfilter") { const q = new URLSearchParams(Object.entries(fd).filter(([, v]) => v)); location.hash = "#/tasks?" + q; return; }
     await refresh();

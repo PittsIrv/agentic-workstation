@@ -147,7 +147,8 @@ class Store:
     def append(self, event_type: str, actor: str, payload: dict[str, Any], *,
                idempotency_key: str | None = None, source_system: str = "workstation",
                project_id: str | None = None, entity_key: str | None = None,
-               occurred_at: str | None = None, provenance: dict | None = None) -> tuple[dict, bool]:
+               occurred_at: str | None = None, provenance: dict | None = None,
+               request_hash: str | None = None) -> tuple[dict, bool]:
         """Record one event. Returns (event, duplicate). A repeated idempotency key returns the
         original event and writes nothing."""
         with self.batch():
@@ -168,6 +169,8 @@ class Store:
                 "payload": payload,
                 "provenance": provenance or {"confidence": "reported"},
             }
+            if request_hash:
+                ev["request_hash"] = request_hash
             self.db.execute("INSERT INTO events (seq, event_id, idempotency_key, event_type, actor, recorded_at, body)"
                             " VALUES (?, ?, ?, ?, ?, ?, ?)",
                             (ev["seq"], ev["event_id"], idempotency_key, event_type, actor, ev["recorded_at"],
