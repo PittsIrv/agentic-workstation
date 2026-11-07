@@ -132,7 +132,7 @@ Read this before you put anything sensitive in it.
 - **Your files are readable by your own processes.** The owner token is a file in `data/secrets/`. Any process running as your OS user can read it and act as you, and so can the database. That includes a full Claude Code or Codex session you start yourself. "Only the owner approves" is an API rule against agent tokens, not isolation from your own processes. Running agent sessions as a separate OS user or in a container would close this; the workstation does not do that for you.
 - **The browser cookie is the owner token.** Cookies are not separated by port, so another web server on 127.0.0.1, opened in the same browser, can receive it.
 - **Thread text leaves your machine.** It goes to Anthropic and OpenAI through the CLIs, under your own accounts.
-- **No browser-level security testing yet.** Rendering of agent text is escaped throughout, but has only been reviewed by hand.
+- **Browser testing covers rendering only.** A headless-browser test loads every page that shows agent or thread text with hostile fixtures (script tags, event-handler attributes, `javascript:` links, SVG `onload`, attribute break-outs) and checks that nothing runs and no markup reaches the page. There is no wider browser-level security review, for example of the sign-in flow.
 
 To allow a new Codex version, re-check its tools with the exact runner command first. List both direct and code-mode tools, and try a file read and `list_mcp_resources`; all must fail. Only then add the version to `TESTED_CODEX_VERSIONS` in `src/workstation/runners.py`.
 
@@ -150,6 +150,8 @@ The database is an append-only event log; tasks, decisions and threads are rebui
 ```bash
 uv run pytest -q
 ```
+
+The browser test needs Chrome or Chromium and is skipped without one; set `WS_REQUIRE_BROWSER=1` to fail instead. CI runs the suite on Linux and macOS.
 
 The source is in `src/workstation`:
 - `store.py`: event log, transactions, projections
