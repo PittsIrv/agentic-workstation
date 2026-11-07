@@ -25,13 +25,16 @@ model = "gpt-6-astra"
 effort = "medium"
 
 # What the dashboard can and cannot see, shown on Home. Replace the defaults to match your setup.
+# Add agent = "claude" (or "gpt", "gemini") to an entry to show that agent's live status instead of the fixed text.
 [[coverage]]
 source = "Claude Code (threads, engineering tasks)"
 state = "connected"
+agent = "claude"
 
 [[coverage]]
 source = "GPT via Codex CLI (threads, reviews)"
 state = "connected"
+agent = "gpt"
 
 [[coverage]]
 source = "Mail and calendar"

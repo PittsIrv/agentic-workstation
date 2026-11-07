@@ -13,9 +13,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .tickets import DEFAULT_CLOSED
 
 DEFAULT_COVERAGE = [
-    {"source": "Claude Code (threads, engineering tasks)", "state": "connected"},
-    {"source": "GPT via Codex CLI (threads, reviews)", "state": "connected"},
-    {"source": "Gemini (secretary role)", "state": "not connected"},
+    {"source": "Claude Code (threads, engineering tasks)", "state": "connected", "agent": "claude"},
+    {"source": "GPT via Codex CLI (threads, reviews)", "state": "connected", "agent": "gpt"},
+    {"source": "Gemini (secretary role)", "state": "not connected", "agent": "gemini"},
     {"source": "Mail and calendar", "state": "not connected; nothing from mail is shown"},
 ]
 
@@ -54,7 +54,8 @@ def load(data_dir: Path | str) -> Config:
     if "closed" in tk:
         cfg.tickets_closed = [str(x) for x in tk["closed"]]
     if "coverage" in raw:
-        cfg.coverage = [{"source": str(c["source"]), "state": str(c["state"])} for c in raw["coverage"]]
+        cfg.coverage = [{"source": str(c["source"]), "state": str(c["state"]),
+                         **({"agent": str(c["agent"])} if "agent" in c else {})} for c in raw["coverage"]]
     validate(cfg, path)
     return cfg
 

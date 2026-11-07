@@ -136,7 +136,7 @@ function agentRows(agents) {
 async function renderHome() {
   const h = await api("/api/home");
   $("#sub").textContent = `${new Date(h.now).toLocaleString([], {weekday: "long", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"})} · ${h.tz} · shows only what agents and you recorded here`;
-  const next = h.actions[0], dec = h.decisions[0];
+  const next = h.next, dec = h.decisions[0];
   let groups = "";
   for (const [b, label] of BUCKETS) {
     const ts = h.actions.filter(t => t.bucket === b);
@@ -144,12 +144,12 @@ async function renderHome() {
   }
   $("#view").innerHTML = `
   <div class="strip">
-    <div class="tile"><span class="k">Your next action</span>${next ? `<a class="big" href="#/tasks/${esc(next.id)}">${esc(next.action)}</a><div class="meta">${esc(next.title)} · ${esc(next.project)}${next.due_local ? " · due " + esc(next.due_local) : ""}</div>` : `<span class="big">Nothing waits on you</span>`}</div>
+    <div class="tile"><span class="k">Your next action</span>${next ? `<a class="big" href="#/${next.kind === "decision" ? "decisions" : "tasks"}/${esc(next.id)}">${esc(next.text)}</a><div class="meta">${next.kind === "decision" ? "Decision · " : ""}${esc(next.meta)}</div>` : `<span class="big">Nothing waits on you</span>`}</div>
     <div class="tile"><span class="k">Most urgent decision</span>${dec ? `<a class="big" href="#/decisions/${esc(dec.id)}">${esc(dec.question)}</a><div class="meta">${dec.options.length} options · ${dec.recommendations.length} agent position(s)</div>` : `<span class="big">No pending decisions</span>`}</div>
     <div class="tile"><span class="k">Agents</span><div class="agents">${agentRows(h.agents)}</div></div>
   </div>
   <div class="cols">
-    <section><h2>What needs you <span class="cnt">${h.actions.length} open</span></h2>${groups || '<p class="empty">Nothing open.</p>'}
+    <section><h2>Tasks waiting on you <span class="cnt">${h.actions.length} open</span></h2>${groups || '<p class="empty">No tasks waiting on you.</p>'}
       <details class="card"><summary>Add a task</summary>${taskForm(h.projects)}</details></section>
     <section><h2>Decisions <span class="cnt">${h.decisions.length} pending</span></h2>${h.decisions.map(d => decisionCard(d)).join("") || '<p class="empty">No pending decisions.</p>'}
       <h2 style="margin-top:18px">Threads <span class="cnt">${h.threads.length}</span></h2>
