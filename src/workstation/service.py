@@ -5,6 +5,8 @@ Nothing here talks to a model or the network; agent invocation lives in `runners
 from __future__ import annotations
 
 import functools
+import hashlib
+import json
 import re
 import subprocess
 from datetime import datetime
@@ -22,6 +24,20 @@ REVIEW_VERDICTS = {"approve", "changes_requested", "comment"}
 PRIORITIES = {"P0", "P1", "P2", "P3"}
 TEXT_FIELDS = {"title", "next_action", "blocked_reason", "note", "why"}
 
+
+OPTION_STOP = {"a", "an", "the", "of", "to", "for", "with", "and", "or", "in", "on", "as", "by", "it", "we", "use", "using"}
+OPTION_MERGE_AT = 0.6
+
+
+def option_tokens(label: str) -> frozenset:
+    """Content words of an option label: lowercase, punctuation and filler words dropped, plural 's' stripped."""
+    words = re.findall(r"[a-z0-9]+", label.lower())
+    return frozenset(w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words if w not in OPTION_STOP)
+
+
+def same_option(a: frozenset, b: frozenset) -> bool:
+    """Two labels are one option when their content words overlap by at least OPTION_MERGE_AT (Jaccard)."""
+    return bool(a or b) and len(a & b) / len(a | b) >= OPTION_MERGE_AT
 
 class Forbidden(Exception): ...
 class Invalid(Exception): ...
@@ -98,9 +114,14 @@ class Service:
         return self.store.state
 
     # ---- helpers -------------------------------------------------------------------------
-    def _dup(self, key: str | None, *event_types: str, **same: Any) -> dict | None:
-        """The earlier event for this key, if any. A key reused for another kind of request or another
-        resource is refused rather than answered with an unrelated result."""
+    @staticmethod
+    def _fp(**request: Any) -> str:
+        """Fingerprint of a request's content, stored with the event so a key reused with a different body is refused."""
+        return hashlib.sha256(json.dumps(request, sort_keys=True, default=str, ensure_ascii=False).encode()).hexdigest()
+
+    def _dup(self, key: str | None, *event_types: str, fp: str | None = None, **same: Any) -> dict | None:
+        """The earlier event for this key, if any. A key reused for another kind of request, another
+        resource or a different body is refused rather than answered with an unrelated result."""
         if not (key and key in self.s.idempotency):
             return None
         eid = self.s.idempotency[key]
@@ -108,6 +129,8 @@ class Service:
         if (event_types and ev["event_type"] not in event_types) or \
                 any(ev["payload"].get(k) != v for k, v in same.items()):
             raise Conflict(f"idempotency key {key} was already used for a different request")
+        if fp and ev.get("request_hash") and ev["request_hash"] != fp:
+            raise Conflict(f"idempotency key {key} was already used with different content")
         return ev
 
     def _task(self, task_id: str) -> dict:
@@ -149,7 +172,11 @@ class Service:
                     source_system: str = "workstation", provenance: dict | None = None,
                     occurred_at: str | None = None) -> tuple[dict, str]:
         """Returns (task, outcome) with outcome created | duplicate | merged."""
-        if (dup := self._dup(idempotency_key, "task_created", "task_updated")):
+        fp = self._fp(op="task", actor=actor, project_id=project_id, title=title, owner=owner, status=status,
+                      priority=priority, next_action=next_action, due_at=due_at, due_tz=due_tz,
+                      evidence_url=evidence_url, thread_id=thread_id, decision_id=decision_id, why=why,
+                      entity_key=entity_key)
+        if (dup := self._dup(idempotency_key, "task_created", "task_updated", fp=fp)):
             return self._task(dup["payload"]["id"]), "duplicate"
         check_fields({"title": title, "next_action": next_action, "why": why, "priority": priority,
                       "due_at": due_at, "due_tz": due_tz})
@@ -186,7 +213,7 @@ class Service:
                        if v and existing.get(k) != v}
             self.store.append("task_updated", actor, {"id": existing["id"], **changes},
                               idempotency_key=idempotency_key, source_system=source_system, project_id=project_id,
-                              entity_key=entity_key, provenance=provenance, occurred_at=occurred_at)
+                              entity_key=entity_key, provenance=provenance, occurred_at=occurred_at, request_hash=fp)
             return existing, "merged"
 
         tid = new_id("task")
@@ -196,13 +223,14 @@ class Service:
             "evidence_url": evidence_url, "thread_id": thread_id, "decision_id": decision_id,
             "why": why, "suggested": suggested, "entity_key": entity_key,
         }, idempotency_key=idempotency_key, source_system=source_system, project_id=project_id,
-            entity_key=entity_key, provenance=provenance, occurred_at=occurred_at)
+            entity_key=entity_key, provenance=provenance, occurred_at=occurred_at, request_hash=fp)
         return self.s.tasks[tid], "created"
 
     @atomic
     def update_task(self, actor: str, task_id: str, *, expected_version: int | None = None,
                     idempotency_key: str | None = None, **changes: Any) -> dict:
-        if self._dup(idempotency_key, "task_updated", "task_completed", id=task_id):
+        fp = self._fp(op="update", actor=actor, task_id=task_id, expected_version=expected_version, changes=changes)
+        if self._dup(idempotency_key, "task_updated", "task_completed", fp=fp, id=task_id):
             return self._task(task_id)
         t = self._task(task_id)
         allowed = {"status", "title", "next_action", "due_at", "due_tz", "priority", "owner", "blocked_reason", "note"}
@@ -240,14 +268,17 @@ class Service:
             raise Invalid(f"unknown owner {changes['owner']}")
         payload.update(changes)
         etype = "task_completed" if new_status == "done" else "task_updated"
-        self.store.append(etype, actor, payload, idempotency_key=idempotency_key, project_id=t["project_id"])
+        self.store.append(etype, actor, payload, idempotency_key=idempotency_key, project_id=t["project_id"],
+                          request_hash=fp)
         return t
 
     @atomic
     def link_artifact(self, actor: str, task_id: str, *, kind: str, title: str, url: str | None = None,
                       ref: str | None = None, repo_path: str | None = None,
                       idempotency_key: str | None = None) -> dict:
-        if self._dup(idempotency_key, "task_updated", id=task_id):
+        fp = self._fp(op="artifact", actor=actor, task_id=task_id, kind=kind, title=title, url=url, ref=ref,
+                      repo_path=repo_path)
+        if self._dup(idempotency_key, "task_updated", fp=fp, id=task_id):
             return self._task(task_id)
         t = self._task(task_id)
         if kind not in ARTIFACT_KINDS:
@@ -265,13 +296,15 @@ class Service:
         art = {"id": new_id("art"), "kind": kind, "title": title, "url": url, "ref": ref, "by": actor,
                "verification": verification}
         self.store.append("task_updated", actor, {"id": task_id, "artifact": art}, idempotency_key=idempotency_key,
-                          project_id=t["project_id"])
+                          project_id=t["project_id"], request_hash=fp)
         return t
 
     @atomic
     def record_review(self, actor: str, task_id: str, *, verdict: str, summary: str, message_id: str | None = None,
                       idempotency_key: str | None = None) -> dict:
-        if self._dup(idempotency_key, "task_updated", id=task_id):
+        fp = self._fp(op="review", actor=actor, task_id=task_id, verdict=verdict, summary=summary,
+                      message_id=message_id)
+        if self._dup(idempotency_key, "task_updated", fp=fp, id=task_id):
             return self._task(task_id)
         t = self._task(task_id)
         if verdict not in REVIEW_VERDICTS:
@@ -281,7 +314,7 @@ class Service:
         review = {"by": actor, "verdict": verdict, "summary": summary, "message_id": message_id,
                   "artifact_count": len(t["artifacts"])}
         self.store.append("task_updated", actor, {"id": task_id, "review": review}, idempotency_key=idempotency_key,
-                          project_id=t["project_id"])
+                          project_id=t["project_id"], request_hash=fp)
         return t
 
     # ---- decisions -----------------------------------------------------------------------
@@ -291,7 +324,10 @@ class Service:
                         context: str = "", urgency: str = "normal", due_at: str | None = None,
                         due_tz: str | None = None, thread_id: str | None = None, follow_up_owner: str = "claude",
                         idempotency_key: str | None = None) -> dict:
-        if (dup := self._dup(idempotency_key, "decision_required")):
+        fp = self._fp(op="decision", actor=actor, question=question, options=options, project_id=project_id,
+                      recommendations=recommendations, evidence=evidence, context=context, urgency=urgency,
+                      due_at=due_at, due_tz=due_tz, thread_id=thread_id, follow_up_owner=follow_up_owner)
+        if (dup := self._dup(idempotency_key, "decision_required", fp=fp)):
             return self.s.decisions[dup["payload"]["id"]]
         if not (is_human(actor) or can(actor, "decision_propose", project_id)):
             raise Forbidden(f"{actor} may not propose decisions")
@@ -312,7 +348,8 @@ class Service:
             "recommendations": recommendations or [], "evidence": evidence or [], "urgency": urgency,
             "due_at": due_at, "due_tz": due_tz, "thread_id": thread_id, "follow_up_owner": follow_up_owner,
         }
-        self.store.append("decision_required", actor, payload, idempotency_key=idempotency_key, project_id=project_id)
+        self.store.append("decision_required", actor, payload, idempotency_key=idempotency_key, project_id=project_id,
+                          request_hash=fp)
         if thread_id and thread_id in self.s.threads:
             self.notice(thread_id, f"Decision card created: “{payload['question']}”. Only the owner can resolve it.")
         return self.s.decisions[did]
@@ -352,7 +389,8 @@ class Service:
     @atomic
     def create_thread(self, actor: str, *, title: str, project_id: str, task_id: str | None = None,
                       budget: dict | None = None, idempotency_key: str | None = None) -> dict:
-        if (dup := self._dup(idempotency_key, "thread_created")):
+        fp = self._fp(op="thread", actor=actor, title=title, project_id=project_id, task_id=task_id, budget=budget)
+        if (dup := self._dup(idempotency_key, "thread_created", fp=fp)):
             return self._thread(dup["payload"]["id"])
         if not is_human(actor):
             raise Forbidden("only the owner opens threads")
@@ -361,7 +399,7 @@ class Service:
         self.store.append("thread_created", actor, {
             "id": tid, "title": title.strip(), "project_id": project_id, "task_id": task_id,
             "participants": [actor], "budget": {**DEFAULT_BUDGET, **(budget or {})}, "critique_rounds_used": 0,
-        }, idempotency_key=idempotency_key, project_id=project_id)
+        }, idempotency_key=idempotency_key, project_id=project_id, request_hash=fp)
         return self.s.threads[tid]
 
     def _dispatches_in(self, thread_id: str) -> list[dict]:
@@ -392,7 +430,8 @@ class Service:
     def post_message(self, actor: str, thread_id: str, text: str, *, idempotency_key: str | None = None,
                      dispatch_id: str | None = None, structured: dict | None = None,
                      runtime: dict | None = None) -> dict:
-        if (dup := self._dup(idempotency_key, "message_posted", thread_id=thread_id)):
+        fp = self._fp(op="message", actor=actor, thread_id=thread_id, text=text)
+        if (dup := self._dup(idempotency_key, "message_posted", fp=fp, thread_id=thread_id)):
             return next(m for m in self.s.messages[thread_id] if m["event_id"] == dup["event_id"])
         th = self._thread(thread_id)
         if not text.strip():
@@ -411,7 +450,7 @@ class Service:
             # Agent-written mentions are suggestions for the owner, never auto-dispatched.
             payload["suggested_mentions"] = [m for m in agents_mentioned if m != actor]
         self.store.append("message_posted", actor, payload, idempotency_key=idempotency_key,
-                          project_id=th["project_id"])
+                          project_id=th["project_id"], request_hash=fp)
         msg = self.s.messages[thread_id][-1]
         if human:
             for agent in agents_mentioned:
@@ -457,12 +496,25 @@ class Service:
             if AGENTS.get(m["author"], {}).get("kind") != "agent" or not m.get("dispatch_id"):
                 continue
             for o in st.get("options") or []:
-                if isinstance(o, str) and o.strip() and o.strip().lower() not in {x.lower() for x in options}:
-                    options.append(o.strip())
+                if not (isinstance(o, str) and o.strip()):
+                    continue
+                key = option_tokens(o)
+                hit = next((x for x in options if same_option(key, x["_key"])), None)
+                if hit is None:
+                    hit = {"label": o.strip(), "sources": [], "_key": key}
+                    options.append(hit)
+                if m["author"] not in {x["agent"] for x in hit["sources"]}:
+                    hit["sources"].append({"agent": m["author"], "label": o.strip(), "message_id": m["id"]})
             if st.get("position"):
                 recs[m["author"]] = {"agent": m["author"], "summary": st["position"], "message_id": m["id"],
                                      "mode": (self.s.dispatches.get(m.get("dispatch_id") or "", {}) or {}).get("mode")}
-        return {"question": re.sub(MENTION_RE, "", human_q).strip(), "options": [{"label": o} for o in options],
+        for o in options:
+            o.pop("_key")
+            names = [AGENTS[x["agent"]]["display"] for x in o["sources"]]
+            o["detail"] = "Proposed by " + " and ".join(names)
+            if len({x["label"].lower() for x in o["sources"]}) > 1:
+                o["detail"] += "; worded " + "; ".join(f'"{x["label"]}" ({AGENTS[x["agent"]]["display"]})' for x in o["sources"])
+        return {"question": re.sub(MENTION_RE, "", human_q).strip(), "options": options,
                 "recommendations": list(recs.values()), "project_id": th["project_id"], "thread_id": thread_id,
                 "evidence": [{"label": f"Thread: {th['title']}", "url": f"#/threads/{thread_id}"}]}
 
