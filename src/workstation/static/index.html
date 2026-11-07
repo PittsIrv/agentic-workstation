@@ -129,7 +129,7 @@ function decisionCard(d, full) {
 function agentRows(agents) {
   return agents.map(a => {
     const state = a.running ? ["wait", `working on ${a.running}`] : a.available ? ["on", "ready"] : a.pull_fallback ? ["wait", "CLI unavailable · session pickup"] : ["off", "offline"];
-    return `<div class="ag"><span><span class="dot ${state[0]}"></span>${who(a.id)} <small>${esc(a.runtime)}</small></span><small>${esc(state[1])}${a.waiting ? ` · ${a.waiting} waiting` : ""} · last reply ${esc(ago(a.last_reply_at))}</small></div>
+    return `<div class="ag"><span><span class="dot ${state[0]}"></span>${who(a.id)}${!a.available && String(a.reason).replace(/\s+/g, "-") === a.runtime ? "" : ` <small>${esc(a.runtime)}</small>`}</span><small>${esc(state[1])}${a.waiting ? ` · ${a.waiting} waiting` : ""} · last reply ${esc(ago(a.last_reply_at))}</small></div>
     ${!a.available || a.last_failure ? `<small class="meta" style="margin:-2px 0 4px 14px">${esc(a.available ? "last failure: " + (a.last_failure || "") : a.reason)}</small>` : ""}`;
   }).join("");
 }
