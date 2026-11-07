@@ -31,8 +31,10 @@ cd agentic-workstation
 uv sync
 mkdir -p data && cp config.example.toml data/config.toml   # then edit owner.id, owner.name, display.timezone
 uv run ws serve            # http://127.0.0.1:8770
-uv run ws open             # in a second terminal: opens a one-time sign-in link
+uv run ws open             # in a second terminal: opens a one-time sign-in link in your default browser
 ```
+
+If port 8770 is taken, set `server.port` in `data/config.toml` (`ws serve` and `ws open` both read it). A fresh install starts with one project, "General"; add more with `uv run ws project <id> <name>`.
 
 The first start creates `data/workstation.db`, your owner token (`data/secrets/<owner id>.token`) and a backup in `data/backups/`. After that it backs up daily and keeps 14. Everything you create stays in `data/`, which git ignores.
 
