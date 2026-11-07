@@ -6,6 +6,12 @@ It runs on your machine, stores everything in one SQLite file, and uses the Clau
 
 **Who it is for:** a single owner on their own computer who wants their assistants' advice side by side, with decisions and evidence kept in one place instead of across chat windows. It is not a team tool and not a hosted service (see [Security model](#security-model)).
 
+![Home: the pending decision leads, with agent status and open tasks](docs/img/home.png)
+
+![A decision card: each assistant's position, options, and approval only for the owner](docs/img/decision-card.png)
+
+*Screenshots use demo data from a fresh `--fake` data directory.*
+
 ## What you get
 
 - **Home:** your next action, the most urgent decision, agent status, and an honest list of which sources are connected.
