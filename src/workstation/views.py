@@ -106,8 +106,12 @@ def home(svc: Service, agents: list[dict], now: datetime | None = None) -> dict:
     coverage = []
     for c in COVERAGE:
         a = by_agent.get(c.get("agent") or "")
-        state = c["state"] if a is None else ("connected" if a["available"] else
-                                              a["reason"] + (" · session pickup" if a.get("pull_fallback") else ""))
+        if not c.get("agent"):
+            state = c["state"]
+        elif a is None:
+            state = "not found"
+        else:
+            state = "connected" if a["available"] else a["reason"] + (" · session pickup" if a.get("pull_fallback") else "")
         coverage.append({"source": c["source"], "state": state})
     return {"now": now.isoformat(timespec="minutes"), "tz": DISPLAY_TZ, "actions": actions, "next": nxt,
             "decisions": decisions, "projects": projects, "agents": agents,

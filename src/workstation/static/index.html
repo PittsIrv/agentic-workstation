@@ -145,7 +145,7 @@ async function renderHome() {
   $("#view").innerHTML = `
   <div class="strip">
     <div class="tile"><span class="k">Your next action</span>${next ? `<a class="big" href="#/${next.kind === "decision" ? "decisions" : "tasks"}/${esc(next.id)}">${esc(next.text)}</a><div class="meta">${next.kind === "decision" ? "Decision · " : ""}${esc(next.meta)}</div>` : `<span class="big">Nothing waits on you</span>`}</div>
-    <div class="tile"><span class="k">Most urgent decision</span>${dec ? `<a class="big" href="#/decisions/${esc(dec.id)}">${esc(dec.question)}</a><div class="meta">${dec.options.length} options · ${dec.recommendations.length} agent position(s)</div>` : `<span class="big">No pending decisions</span>`}</div>
+    <div class="tile"><span class="k">Decisions</span>${dec ? `<a class="big" href="#/decisions/${esc(dec.id)}">${h.decisions.length} pending</a><div class="meta">${h.decisions.length > 1 ? "Then: " + esc(h.decisions[1].question) : "Its card is below"}</div>` : `<span class="big">No pending decisions</span>`}</div>
     <div class="tile"><span class="k">Agents</span><div class="agents">${agentRows(h.agents)}</div></div>
   </div>
   <div class="cols">

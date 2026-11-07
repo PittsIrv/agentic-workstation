@@ -52,3 +52,6 @@ def test_coverage_follows_live_agent_status(ws):
     cov = {x["source"]: x["state"] for x in views.home(app.state.ws.svc, down)["coverage"]}
     assert next(v for k, v in cov.items() if k.startswith("Claude")) == "not signed in · session pickup"
     assert next(v for k, v in cov.items() if k.startswith("GPT")) == "connected"
+    # a configured agent that is missing from the live list must not fall back to the fixed text
+    cov = {x["source"]: x["state"] for x in views.home(app.state.ws.svc, [])["coverage"]}
+    assert next(v for k, v in cov.items() if k.startswith("Claude")) == "not found"
