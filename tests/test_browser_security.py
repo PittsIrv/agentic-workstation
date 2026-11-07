@@ -34,6 +34,7 @@ PAYLOADS = [
     f"<iframe srcdoc=\"<script>parent.document.title='{MARK}8'</script>\"></iframe>",
     f"</script><script>document.title='{MARK}9'</script>",
     f"<details open ontoggle=\"document.title='{MARK}10'\">",
+    "<img src=x onerror=\"document.body.setAttribute('data-pwned','1')\">",
 ]
 HOSTILE = " ".join(PAYLOADS)
 JS_URL = f"javascript:document.title='{MARK}11'"
@@ -46,8 +47,11 @@ def chrome():
     for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
         if path := shutil.which(name):
             return path
-    mac = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    return mac if os.path.exists(mac) else None
+    for base in ("/Applications", os.path.expanduser("~/Applications")):
+        mac = f"{base}/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if os.path.exists(mac):
+            return mac
+    return None
 
 
 CHROME = chrome()
@@ -74,12 +78,6 @@ class Dom(HTMLParser):
         self.text.append(data)
 
 
-def free_port():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 @pytest.fixture(scope="module")
 def site(tmp_path_factory):
     data = tmp_path_factory.mktemp("data")
@@ -94,9 +92,11 @@ def site(tmp_path_factory):
         "proposed_tasks": [{"title": HOSTILE, "owner": "claude"}]}) + "\n```")
     runners = {"claude": Fake(lambda p: reply), "gpt": Fake(lambda p: reply), "gemini": Unconnected("not connected")}
     app = create_app(data, runners)
-    port = free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
-    thread = threading.Thread(target=server.run, daemon=True)
+    sock = socket.socket()  # bound here and handed to uvicorn, so no other process can take the port
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
+    thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
     thread.start()
     for _ in range(100):
         if server.started:
@@ -163,12 +163,11 @@ def test_hostile_text_stays_inert(site, name):
     html = dump(site, site["pages"][name])
     dom = inspect(html)
     shown = " ".join(dom.text)
-    assert "<script>" in shown or name in ("threads", "tasks", "activity"), \
-        f"{name}: the hostile fixture never rendered, so this page proves nothing"
+    assert "<script>" in shown, f"{name}: the hostile fixture never rendered, so this page proves nothing"
     assert dom.tags.count("script") == 1, f"{name}: an extra <script> element reached the DOM"
     assert not FORBIDDEN_TAGS & set(dom.tags), f"{name}: {FORBIDDEN_TAGS & set(dom.tags)} reached the DOM"
     assert not [a for a in dom.attrs if a.startswith("on")], f"{name}: an event-handler attribute reached the DOM"
-    assert not [a for a in dom.attrs if "pwned" in a], f"{name}: a payload set an attribute"
+    assert not [a for a in dom.attrs if "pwned" in a], f"{name}: a payload set an attribute on the page"
     assert not [u for u in dom.urls if u.startswith(("javascript:", "data:", "vbscript:"))], \
         f"{name}: a script URL reached an href or src"
     assert f"<title>{MARK}" not in html and MARK not in "".join(dom.text[:1]), f"{name}: a payload changed the title"

@@ -151,7 +151,7 @@ The database is an append-only event log; tasks, decisions and threads are rebui
 uv run pytest -q
 ```
 
-The browser test needs Chrome or Chromium and is skipped without one; set `WS_REQUIRE_BROWSER=1` to fail instead. CI runs the suite on Linux and macOS.
+The browser test needs Chrome or Chromium 109 or newer and is skipped without one; set `WS_REQUIRE_BROWSER=1` to fail instead. CI runs the suite on Linux and macOS.
 
 The source is in `src/workstation`:
 - `store.py`: event log, transactions, projections
