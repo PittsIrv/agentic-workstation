@@ -109,6 +109,7 @@ class Service:
     def __init__(self, store: Store, on_dispatch: Callable[[str], None] | None = None):
         self.store = store
         self.on_dispatch = on_dispatch or (lambda _id: None)
+        self._refused_at: dict[tuple[str, str], datetime] = {}  # in memory: stops a loop, not worth persisting
 
     @property
     def s(self):
@@ -167,14 +168,15 @@ class Service:
     @atomic
     def record_refusal(self, actor: str, action: str, reason: str) -> bool:
         """Log that an agent token tried something reserved for the owner (shown in the weekly review).
-        The same refusal repeated within a minute is logged once, so a looping agent cannot bloat the log."""
+        The same refusal by the same agent repeated within a minute is logged once (tracked in memory per agent and
+        action, so interleaved events and other agents do not defeat it), so a looping agent cannot bloat the log."""
         if is_human(actor) or actor not in AGENTS:
             return False
-        last = self.s.events[-1] if self.s.events else None
-        if last and last["event_type"] == "action_refused" and last["actor"] == actor \
-                and last["payload"]["action"] == action \
-                and (datetime.fromisoformat(_store.now_iso()) - datetime.fromisoformat(last["recorded_at"])).total_seconds() < 60:
+        now = datetime.fromisoformat(_store.now_iso())
+        seen = self._refused_at.get((actor, action))
+        if seen and (now - seen).total_seconds() < 60:
             return False
+        self._refused_at[(actor, action)] = now
         self.store.append("action_refused", actor, {"action": action, "reason": reason[:200]})
         return True
 

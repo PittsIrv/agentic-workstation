@@ -9,6 +9,7 @@ Seven days in America/New_York, midnight to midnight. Open, stale and pending ar
 ## Tasks accepted
 
 - Finished early in the week (owner Claude, 2026-11-03, Website)
+- Reopened the week after (owner Owner, 2026-11-04, General)
 - Done at 23:30 on the last day (owner Owner, 2026-11-08, General)
 
 ## Stale tasks
@@ -28,5 +29,5 @@ Seven days in America/New_York, midnight to midnight. Open, stale and pending ar
 
 ## Projects
 
-- **General:** decisions resolved 1, tasks accepted 1, open 4, stale 1, pending decisions 2
+- **General:** decisions resolved 1, tasks accepted 2, open 5, stale 1, pending decisions 2
 - **Website:** decisions resolved 0, tasks accepted 1, open 0, stale 0, pending decisions 0
