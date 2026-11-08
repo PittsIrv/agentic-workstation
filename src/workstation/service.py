@@ -356,7 +356,7 @@ class Service:
 
     @atomic
     def resolve_decision(self, actor: str, decision_id: str, *, status: str, option_id: str | None = None,
-                         note: str = "") -> dict:
+                         note: str = "", revisit: str = "") -> dict:
         if not is_human(actor):
             raise Forbidden("only the owner resolves decisions")
         d = self.s.decisions.get(decision_id)
@@ -370,7 +370,7 @@ class Service:
         if status == "approved" and not option:
             raise Invalid("approving needs an option_id")
         self.store.append("decision_resolved", actor, {"id": decision_id, "status": status, "option_id": option_id,
-                                                       "note": note}, project_id=d["project_id"])
+                                                       "note": note, "revisit": revisit}, project_id=d["project_id"])
         if status == "approved":
             task, _ = self.create_task(
                 actor, title=f"Implement: {option['label']}", project_id=d["project_id"], owner=d["follow_up_owner"],

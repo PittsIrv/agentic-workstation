@@ -123,8 +123,9 @@ function decisionCard(d, full) {
   <div class="q">${esc(d.question)}</div>${d.context ? `<div class="ctx">${esc(d.context)}</div>` : ""}
   ${recs ? `<div class="recs"><span class="k">Positions</span>${recs}</div>` : ""}${opts}
   ${(d.evidence || []).length ? `<div class="meta">Evidence: ${d.evidence.map(e => link(e.url, e.label)).join(" · ")}</div>` : ""}
-  ${d.status === "pending" ? `<div class="row"><button data-resolve="${esc(d.id)}" data-s="deferred">Defer</button><button data-resolve="${esc(d.id)}" data-s="rejected">Reject all</button><span class="note">Only you can resolve this. Approving assigns ${who(d.follow_up_owner)} an engineering task.</span></div>`
-    : `<div class="meta">Resolved by ${who(d.resolved_by)} ${esc(fmt(d.resolved_at))}${d.note ? " — " + esc(d.note) : ""}${d.resulting_task ? ` · <a href="#/tasks/${esc(d.resulting_task)}">resulting task</a>` : ""}</div>`}</div>`;
+  ${d.status === "pending" ? `<div class="row"><input class="dnote" placeholder="Reason (optional)"><input class="drev" placeholder="Revisit when (optional)"></div><div class="row"><button data-resolve="${esc(d.id)}" data-s="deferred">Defer</button><button data-resolve="${esc(d.id)}" data-s="rejected">Reject all</button><span class="note">Only you can resolve this. Approving assigns ${who(d.follow_up_owner)} an engineering task.</span></div>`
+    : `<div class="meta">Resolved by ${who(d.resolved_by)} ${esc(fmt(d.resolved_at))}${d.note ? " — " + esc(d.note) : ""}${d.resulting_task ? ` · <a href="#/tasks/${esc(d.resulting_task)}">resulting task</a>` : ""}</div>${d.revisit ? `<div class="meta">Revisit when: ${esc(d.revisit)}</div>` : ""}
+    <div class="row"><button data-rec="copy" data-id="${esc(d.id)}">Copy as decision record</button><button data-rec="download" data-id="${esc(d.id)}">Download .md</button><span class="note" data-recmsg></span></div>`}</div>`;
 }
 function agentRows(agents) {
   return agents.map(a => {
@@ -305,13 +306,20 @@ document.addEventListener("click", async ev => {
   const b = ev.target.closest("button"); if (!b) return;
   const err = m => { const el = $("#threaderr") || $("#taskerr") || $("#editerr"); if (el) el.textContent = m; else alert(m); };
   try {
+    if (b.dataset.rec) {
+      const msg = b.closest(".dc").querySelector("[data-recmsg]");
+      const rec = await api(`/api/decisions/${encodeURIComponent(b.dataset.id)}/record`);
+      if (b.dataset.rec === "copy") { await navigator.clipboard.writeText(rec.markdown); msg.textContent = "Copied. Paste it into your repo, for example docs/decisions/" + rec.filename; }
+      else { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rec.markdown], {type: "text/markdown"})); a.download = rec.filename; a.click(); URL.revokeObjectURL(a.href); msg.textContent = "Saved " + rec.filename; }
+      return; }
     if (b.dataset.task) { b.disabled = true; await api(`/api/tasks/${b.dataset.task}`, {method: "PATCH", body: {expected_version: +b.dataset.v, changes: {status: b.dataset.status}}}); }
     else if (b.dataset.approve || b.dataset.resolve) {
       if (!b.dataset.armed) { b.dataset.armed = "1"; b.dataset.text = b.textContent; b.textContent = b.dataset.approve ? `Confirm: approve “${b.dataset.label}”` : `Confirm ${b.dataset.s === "deferred" ? "defer" : "reject"}`;
         setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = b.dataset.text; } }, 5000); return; }
       b.disabled = true;
-      if (b.dataset.approve) await api(`/api/decisions/${b.dataset.approve}/resolve`, {method: "POST", body: {status: "approved", option_id: b.dataset.o}});
-      else await api(`/api/decisions/${b.dataset.resolve}/resolve`, {method: "POST", body: {status: b.dataset.s}}); }
+      const card = b.closest(".dc"), why = {note: card.querySelector(".dnote").value.trim(), revisit: card.querySelector(".drev").value.trim()};
+      if (b.dataset.approve) await api(`/api/decisions/${b.dataset.approve}/resolve`, {method: "POST", body: {status: "approved", option_id: b.dataset.o, ...why}});
+      else await api(`/api/decisions/${b.dataset.resolve}/resolve`, {method: "POST", body: {status: b.dataset.s, ...why}}); }
     else if (b.dataset.insert) { const ta = $("#composer"); ta.value = (ta.value && !ta.value.endsWith(" ") ? ta.value + " " : ta.value) + b.dataset.insert; ta.focus(); return; }
     else if (b.dataset.propose) { b.disabled = true; await api("/api/tasks", {method: "POST", body: {...JSON.parse(b.dataset.propose), status: "inbox"}}); }
     else if (b.id === "send") { const ta = $("#composer"), text = ta.value.trim(); if (!text) return; b.disabled = true; const id = encodeURIComponent(location.hash.split("/")[2]);

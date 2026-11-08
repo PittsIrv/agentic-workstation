@@ -122,7 +122,7 @@ def home(svc: Service, agents: list[dict], now: datetime | None = None) -> dict:
 def decision_card(d: dict) -> dict:
     return {k: d.get(k) for k in ("id", "question", "context", "options", "recommendations", "evidence", "urgency",
                                   "due_at", "due_tz", "status", "thread_id", "project_id", "created_by", "created_at",
-                                  "option_id", "note", "resolved_by", "resolved_at", "resulting_task",
+                                  "option_id", "note", "revisit", "resolved_by", "resolved_at", "resulting_task",
                                   "follow_up_owner", "history", "version")}
 
 

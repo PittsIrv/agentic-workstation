@@ -122,6 +122,13 @@ def site(tmp_path_factory):
         "question": HOSTILE, "context": HOSTILE, "project_id": "general", "thread_id": th["id"],
         "options": [{"label": HOSTILE, "detail": HOSTILE}, {"label": "Safe", "detail": "ok"}],
         "recommendations": draft["recommendations"], "evidence": [{"title": HOSTILE, "url": BAD_URL}]}).json()
+    done = http.post("/api/decisions", json={
+        "question": HOSTILE, "context": HOSTILE, "project_id": "general", "thread_id": th["id"],
+        "options": [{"label": HOSTILE, "detail": HOSTILE}, {"label": "Safe"}], "recommendations": draft["recommendations"],
+        "evidence": [{"title": HOSTILE, "url": BAD_URL}]}).json()
+    http.post(f"/api/decisions/{done['id']}/resolve", json={
+        "status": "approved", "option_id": done["options"][0]["id"], "note": HOSTILE, "revisit": HOSTILE}).raise_for_status()
+    record = http.get(f"/api/decisions/{done['id']}/record").json()["markdown"]
     task = http.post("/api/tasks", json={
         "title": HOSTILE, "project_id": "general", "owner": "owner", "status": "ready", "next_action": HOSTILE,
         "why": HOSTILE, "evidence_url": BAD_URL, "thread_id": th["id"]}).json()["task"]
@@ -130,7 +137,8 @@ def site(tmp_path_factory):
     profile = tmp_path_factory.mktemp("profile")
     yield {"base": base, "http": http, "profile": profile,
            "pages": {"home": "#/", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
-                     "task": f"#/tasks/{task['id']}", "decision": f"#/decisions/{dec['id']}", "activity": "#/activity"}}
+                     "task": f"#/tasks/{task['id']}", "decision": f"#/decisions/{dec['id']}", "resolved": f"#/decisions/{done['id']}",
+                     "activity": "#/activity"}, "record": record}
     server.should_exit = True
     thread.join(timeout=10)
     app.state.ws.close()
@@ -158,7 +166,7 @@ def inspect(html):
     return dom
 
 
-@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "activity"])
+@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity"])
 def test_hostile_text_stays_inert(site, name):
     html = dump(site, site["pages"][name])
     dom = inspect(html)
@@ -188,3 +196,20 @@ def test_script_urls_are_refused_at_intake(site):
     http, th = site["http"], site["pages"]["task"].split("/")[-1]
     assert http.post("/api/tasks", json={"title": "t", "project_id": "general", "evidence_url": JS_URL}).status_code == 422
     assert http.post(f"/api/tasks/{th}/artifacts", json={"kind": "doc", "title": "t", "url": JS_URL}).status_code == 422
+
+
+def test_exported_record_is_inert_when_rendered_in_a_browser(site, tmp_path):
+    """The decision record, rendered as HTML with raw HTML allowed (the worst case for a Markdown viewer)."""
+    from markdown_it import MarkdownIt
+    body = MarkdownIt("commonmark", {"html": True}).render(site["record"])
+    page = tmp_path / "record.html"
+    page.write_text(f"<!doctype html><title>Record</title><body>{body}</body>")
+    out = subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=4000",
+                          f"--user-data-dir={site['profile']}", "--dump-dom", page.as_uri()],
+                         capture_output=True, text=True, timeout=90)
+    assert out.returncode == 0, out.stderr[-500:]
+    dom = inspect(out.stdout)
+    assert "script" not in dom.tags and not FORBIDDEN_TAGS & set(dom.tags)
+    assert not [a for a in dom.attrs if a.startswith("on") or "pwned" in a]
+    assert not [u for u in dom.urls if u.startswith(("javascript:", "data:", "vbscript:"))]
+    assert "<title>Record</title>" in out.stdout and any("onerror" in t for t in dom.text)

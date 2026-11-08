@@ -16,7 +16,7 @@ It runs on your machine, stores everything in one SQLite file, and uses the Clau
 
 - **Home:** your next action, the most urgent decision, agent status, and an honest list of which sources are connected.
 - **Threads:** `@claude` and `@gpt` mentions. Each reply shows which posts the agent saw. One critique round per thread, and a budget of agent turns.
-- **Decision cards:** options with each agent's position. Near-duplicate options from the agents are merged and show both sources. Only the owner can approve, reject or defer. An approval creates one engineering task.
+- **Decision cards:** options with each agent's position. Near-duplicate options from the agents are merged and show both sources. Only the owner can approve, reject or defer. An approval creates one engineering task. The resolved card exports as a [decision record](#decision-records) for your repo.
 - **Tasks:** owner, due date with time zone, linked artifacts (commits verified with `git cat-file`), reviews and a full history. Agents cannot mark work done.
 - **Event intake:** other assistants or scripts report tasks, blocks and decisions through one authenticated endpoint, with idempotent delivery ([docs/events.md](docs/events.md)).
 - **Tickets:** open tickets from a Markdown file you point it at, shown on Home.
@@ -52,7 +52,7 @@ With `uv run ws serve --fake` running and signed in (no agent CLIs needed):
 
 1. **Threads** → type a topic → **Create**. Mention both assistants (`@claude @gpt your question`) and **Send**; each replies on its own.
 2. **Draft decision card**: options the assistants both proposed are merged into one. Type the **Question**, then **Create decision card**.
-3. On the card (also on Home) click **Approve** on an option, then click the confirm button that replaces it. Approval creates one task for Claude, shown under **Tasks**.
+3. On the card (also on Home) optionally fill **Reason** and **Revisit when**, click **Approve** on an option, then click the confirm button that replaces it. Approval creates one task for Claude, shown under **Tasks**. The resolved card offers the [decision record](#decision-records).
 4. Work reaches the owner only with evidence. As the agent (`uv run ws token claude` once), link a commit and move the task through the allowed states:
    The task id is in the address bar when you open the task (`#/tasks/<task-id>`).
    ```bash
@@ -61,6 +61,72 @@ With `uv run ws serve --fake` running and signed in (no agent CLIs needed):
    uv run ws task <task-id> --as claude --status needs_review
    ```
    A task must be `in_progress` before `needs_review`, and `needs_review` needs a linked artifact. Then **Accept** it under **Tasks**.
+
+## Decision records
+
+A resolved decision exports as a Markdown file you can commit to your own repo, for example under `docs/decisions/`. Open the resolved card and use **Copy as decision record** or **Download .md** (`YYYY-MM-DD-<title>.md`). The workstation never writes into your repositories. When you resolve a card, the optional **Reason** and **Revisit when** fields are kept and exported.
+
+![A resolved decision card with the export buttons](docs/img/decision-record.png)
+
+Agents and scripts fetch the same file, read-only, with their own token:
+
+```bash
+uv run ws record <decision-id> --as claude              # prints the Markdown
+uv run ws record <decision-id> --out docs/decisions/    # writes <date>-<title>.md into that folder
+```
+
+`GET /api/decisions/<id>/record` returns `{"filename", "markdown"}`. A decision that is still pending is refused (409).
+
+Format: a title (the question), a metadata list (date in your time zone, status, who decided, project), then the sections Question, Context, Positions (one line per agent), Options considered (the chosen one marked), Evidence (web links), Decision, Reason, Linked tasks with their status, and Revisit when. Empty sections are left out. Example:
+
+```markdown
+# Should the dashboard move to event-driven updates?
+
+- **Date:** 2026-11-07
+- **Status:** approved
+- **Decided by:** Owner
+- **Project:** General
+
+## Question
+
+Should the dashboard move to event-driven updates?
+
+## Context
+
+Polling every 5 seconds is simple but wasteful.
+
+## Positions
+
+- **Claude:** Server-sent events: one-way push is enough here.
+- **GPT:** Server-sent events, but keep polling as a fallback.
+
+## Options considered
+
+- **Server-sent events** — Proposed by Claude and GPT _(chosen)_
+- **Keep polling** — Proposed by GPT
+
+## Evidence
+
+- [Load test](<https://example.com/load-test>)
+
+## Decision
+
+**Approved:** Server-sent events.
+
+Reason:
+
+Push is simpler for a read-only dashboard.
+
+## Linked tasks
+
+- [done] Implement: Server-sent events (owner Claude)
+
+## Revisit when
+
+If we need two-way messaging.
+```
+
+The text in a record comes from agents and threads, so it is escaped: HTML, Markdown markup, link and image syntax, and line-start constructs such as headings, lists, quotes and tables are neutralized, and only `http(s)` links are written. A bare web address typed into a position is shown as that address and a viewer may link it.
 
 ## Configuration
 

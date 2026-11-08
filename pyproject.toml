@@ -27,6 +27,7 @@ module-name = "workstation"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "markdown-it-py>=4.2.0",
     "pytest>=9.2.0",
 ]
 
