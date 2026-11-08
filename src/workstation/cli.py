@@ -107,6 +107,8 @@ def main(argv=None) -> None:
         rec = r.json()
         if args.out:
             dest = Path(args.out)
+            if args.out.endswith(("/", os.sep)):  # a trailing slash means a folder, created if missing
+                dest.mkdir(parents=True, exist_ok=True)
             dest = dest / rec["filename"] if dest.is_dir() else dest
             dest.write_text(rec["markdown"])
             print(f"decision record written: {dest}")

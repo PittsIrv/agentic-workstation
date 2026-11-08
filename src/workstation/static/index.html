@@ -310,7 +310,7 @@ document.addEventListener("click", async ev => {
       const msg = b.closest(".dc").querySelector("[data-recmsg]");
       const rec = await api(`/api/decisions/${encodeURIComponent(b.dataset.id)}/record`);
       if (b.dataset.rec === "copy") { await navigator.clipboard.writeText(rec.markdown); msg.textContent = "Copied. Paste it into your repo, for example docs/decisions/" + rec.filename; }
-      else { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rec.markdown], {type: "text/markdown"})); a.download = rec.filename; a.click(); URL.revokeObjectURL(a.href); msg.textContent = "Saved " + rec.filename; }
+      else { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rec.markdown], {type: "text/markdown"})); a.download = rec.filename; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); msg.textContent = "Saved " + rec.filename; }
       return; }
     if (b.dataset.task) { b.disabled = true; await api(`/api/tasks/${b.dataset.task}`, {method: "PATCH", body: {expected_version: +b.dataset.v, changes: {status: b.dataset.status}}}); }
     else if (b.dataset.approve || b.dataset.resolve) {

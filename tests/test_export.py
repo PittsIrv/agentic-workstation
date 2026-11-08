@@ -139,3 +139,16 @@ def test_hostile_text_cannot_add_sections_or_links_to_a_rendered_record():
 def test_hostile_text_is_still_readable_in_the_record():
     md = hostile_record()["markdown"]
     assert "onerror" in md and "javascript:" in md  # shown as text, not dropped
+
+
+def test_escaped_numbered_line_shows_no_stray_backslash():
+    from workstation.export import md
+    assert md("1. numbered") == "1\\. numbered"
+    html = MarkdownIt("commonmark", {"html": True}).render(md("1. numbered") + "\n\n" + md("2) two"))
+    assert "<ol" not in html and "\\" not in html and "1. numbered" in html and "2) two" in html
+
+
+def test_decided_by_shows_the_owner_display_name(ws):
+    app, c, tokens = ws
+    did = resolved(c, tokens)
+    assert "**Decided by:** Owner" in c.get(f"/api/decisions/{did}/record", headers=H(tokens)).json()["markdown"]
