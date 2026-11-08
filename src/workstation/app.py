@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from . import views
 from . import config as configuration
 from .principals import AGENTS, Tokens, can, configure_owner, is_human
+from .export import decision_record
 from .principals import owner as owner_id
 from .runners import Dispatcher, Runner, build_prompt, default_runners, parse_reply
 from .service import Conflict, Forbidden, Invalid, NotFound, Service
@@ -63,6 +64,7 @@ class ResolveIn(BaseModel):
     status: str
     option_id: str | None = None
     note: str = ""
+    revisit: str = ""
 
 
 class TaskIn(BaseModel):
@@ -344,6 +346,11 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         if d["idempotency_key"]:
             d["idempotency_key"] = f"{who}:{d['idempotency_key']}"
         return ws.svc.create_decision(who, **d)
+
+    @app.get("/api/decisions/{decision_id}/record")
+    def record(decision_id: str, _: str = Depends(principal)):
+        """The resolved decision as Markdown. Read-only: any identity may fetch it, nothing is written."""
+        return decision_record(ws.svc, decision_id, views.DISPLAY_TZ, lambda who: AGENTS.get(who, {}).get("display", who))
 
     @app.post("/api/decisions/{decision_id}/resolve")
     def resolve(decision_id: str, body: ResolveIn, who: str = Depends(principal)):

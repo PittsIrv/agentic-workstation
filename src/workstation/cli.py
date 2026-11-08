@@ -45,6 +45,8 @@ def main(argv=None) -> None:
     sub.add_parser("open")
     s = sub.add_parser("token"); s.add_argument("principal")
     s = sub.add_parser("export"); s.add_argument("path")
+    s = sub.add_parser("record"); s.add_argument("decision_id"); s.add_argument("--as", dest="who", default=None)
+    s.add_argument("--out", default=None, help="write to this file or directory instead of printing")
     s = sub.add_parser("backup"); s.add_argument("path", nargs="?")
     s = sub.add_parser("project"); s.add_argument("id"); s.add_argument("name"); s.add_argument("--goal", default="")
     s.add_argument("--stage", default=""); s.add_argument("--milestone", default="")
@@ -98,6 +100,18 @@ def main(argv=None) -> None:
         from .store import Store
         n = Store(data_dir(args) / "workstation.db").export_jsonl(Path(args.path))
         print(f"{n} events → {args.path}")
+    elif args.cmd == "record":
+        r = client(args, args.who or owner()).get(f"/api/decisions/{args.decision_id}/record")
+        if r.status_code >= 400:
+            sys.exit(f"{r.status_code}: {r.text}")
+        rec = r.json()
+        if args.out:
+            dest = Path(args.out)
+            dest = dest / rec["filename"] if dest.is_dir() else dest
+            dest.write_text(rec["markdown"])
+            print(f"decision record written: {dest}")
+        else:
+            print(rec["markdown"], end="")
     elif args.cmd == "backup":
         import time as _t
         from .store import Store
