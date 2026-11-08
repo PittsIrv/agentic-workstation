@@ -17,25 +17,31 @@ from .service import Conflict, NotFound
 
 _INLINE = re.compile(r"[\\`*_\[\]&<>~]")
 _LINE_START = re.compile(r"^(#|[-+=|:]|\d+[.)])")
+_NUMBERED = re.compile(r"^(\d+)([.)])")
 
 
 def _inline(text: str) -> str:
     return _INLINE.sub(lambda m: {"&": "&amp;", "<": "&lt;", ">": "&gt;"}.get(m.group(), "\\" + m.group()), text)
 
 
+def _start(line: str) -> str:
+    """Stop a line from opening a heading, list, quote or table. Only ASCII punctuation can be backslash-escaped,
+    so a numbered start escapes its dot or bracket, not the digit."""
+    if _NUMBERED.match(line):
+        return _NUMBERED.sub(lambda m: m.group(1) + "\\" + m.group(2), line, count=1)
+    return "\\" + line if _LINE_START.match(line) else line
+
+
 def md(text: object) -> str:
     """One line of untrusted text, safe to place in Markdown."""
-    line = " ".join(str(text or "").split())
-    line = _inline(line)
-    return "\\" + line if _LINE_START.match(line) else line
+    return _start(_inline(" ".join(str(text or "").split())))
 
 
 def block(text: object) -> str:
     """Untrusted multi-line text as paragraphs: no indented code, no line can start a Markdown construct."""
     lines = []
     for raw in str(text or "").replace("\r\n", "\n").split("\n"):
-        line = _inline(raw.strip())
-        lines.append("\\" + line if _LINE_START.match(line) else line)
+        lines.append(_start(_inline(raw.strip())))
     return "\n".join(lines).strip()
 
 
