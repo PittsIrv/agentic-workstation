@@ -134,11 +134,15 @@ def site(tmp_path_factory):
         "why": HOSTILE, "evidence_url": BAD_URL, "thread_id": th["id"]}).json()["task"]
     http.post(f"/api/tasks/{task['id']}/artifacts", json={"kind": "doc", "title": HOSTILE, "url": BAD_URL}).raise_for_status()
     http.post(f"/api/tasks/{task['id']}/artifacts", json={"kind": "other", "title": HOSTILE, "ref": HOSTILE}).raise_for_status()
+    for status in ("in_progress", "needs_review", "done"):  # an accepted task, so the review has one to list
+        http.patch(f"/api/tasks/{task['id']}", json={"expected_version": http.get(f"/api/tasks/{task['id']}").json()["version"],
+                                                     "changes": {"status": status}}).raise_for_status()
+    review_md = http.get("/api/review/record").json()["markdown"]
     profile = tmp_path_factory.mktemp("profile")
     yield {"base": base, "http": http, "profile": profile,
            "pages": {"home": "#/", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
                      "task": f"#/tasks/{task['id']}", "decision": f"#/decisions/{dec['id']}", "resolved": f"#/decisions/{done['id']}",
-                     "activity": "#/activity"}, "record": record}
+                     "activity": "#/activity", "review": "#/review"}, "record": record, "review_md": review_md}
     server.should_exit = True
     thread.join(timeout=10)
     app.state.ws.close()
@@ -166,7 +170,7 @@ def inspect(html):
     return dom
 
 
-@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity"])
+@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review"])
 def test_hostile_text_stays_inert(site, name):
     html = dump(site, site["pages"][name])
     dom = inspect(html)
@@ -198,10 +202,12 @@ def test_script_urls_are_refused_at_intake(site):
     assert http.post(f"/api/tasks/{th}/artifacts", json={"kind": "doc", "title": "t", "url": JS_URL}).status_code == 422
 
 
-def test_exported_record_is_inert_when_rendered_in_a_browser(site, tmp_path):
-    """The decision record, rendered as HTML with raw HTML allowed (the worst case for a Markdown viewer)."""
+@pytest.mark.parametrize("export", ["record", "review_md"])
+def test_exported_markdown_is_inert_when_rendered_in_a_browser(site, tmp_path, export):
+    """The decision record and the weekly review, rendered as HTML with raw HTML allowed (the worst case for a viewer)."""
     from markdown_it import MarkdownIt
-    body = MarkdownIt("commonmark", {"html": True}).render(site["record"])
+    assert "onerror" in site[export], "the export must carry the hostile text, or this proves nothing"
+    body = MarkdownIt("commonmark", {"html": True}).render(site[export])
     page = tmp_path / "record.html"
     page.write_text(f"<!doctype html><title>Record</title><body>{body}</body>")
     out = subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--no-sandbox", "--virtual-time-budget=4000",

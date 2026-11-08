@@ -10,6 +10,7 @@ import fcntl
 import secrets
 import threading
 import time
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ from pydantic import BaseModel, Field
 from . import views
 from . import config as configuration
 from .principals import AGENTS, Tokens, can, configure_owner, is_human
+from . import review as weekly
 from .export import decision_record
 from .principals import owner as owner_id
 from .runners import Dispatcher, Runner, build_prompt, default_runners, parse_reply
@@ -200,8 +202,19 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         if not ws.svc.s.projects:  # a thread needs a project; give a fresh install one to start in
             ws.svc.upsert_project(owner_id(), "general", "General", idempotency_key="seed-general-project")
 
+    def refused(request: Request, reason: str) -> None:
+        """Log an agent's refused attempt (owner-only action) for the weekly review."""
+        try:
+            who = principal(request)
+        except HTTPException:
+            return
+        route = getattr(request.scope.get("route"), "path", request.url.path)
+        ws.svc.record_refusal(who, f"{request.method} {route}", reason)
+
     @app.exception_handler(Forbidden)
-    async def _f(_, e): return JSONResponse({"error": str(e)}, 403)
+    async def _f(request, e):
+        refused(request, str(e))
+        return JSONResponse({"error": str(e)}, 403)
 
     @app.exception_handler(Invalid)
     async def _i(_, e): return JSONResponse({"error": str(e)}, 422)
@@ -228,8 +241,9 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
                 raise HTTPException(403, "cross-site write refused")
         return who
 
-    def owner(who: str = Depends(principal)) -> str:
+    def owner(request: Request, who: str = Depends(principal)) -> str:
         if not is_human(who):
+            refused(request, "owner only")
             raise HTTPException(403, "owner only")
         return who
 
@@ -351,6 +365,24 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     def record(decision_id: str, _: str = Depends(principal)):
         """The resolved decision as Markdown. Read-only: any identity may fetch it, nothing is written."""
         return decision_record(ws.svc, decision_id, views.DISPLAY_TZ, lambda who: AGENTS.get(who, {}).get("display", who))
+
+    def review_for(end: str | None):
+        try:
+            day = date.fromisoformat(end) if end else None
+        except ValueError:
+            raise Invalid("end must be a date like 2026-11-08") from None
+        return weekly.build(ws.svc, views.DISPLAY_TZ, day)
+
+    @app.get("/api/review")
+    def review(end: str | None = None, _: str = Depends(principal)):
+        """The seven days ending on `end` (default today) in the display time zone. Read-only for every identity."""
+        with ws.store.lock:
+            return review_for(end)
+
+    @app.get("/api/review/record")
+    def review_record(end: str | None = None, _: str = Depends(principal)):
+        with ws.store.lock:
+            return weekly.render_review(review_for(end))
 
     @app.post("/api/decisions/{decision_id}/resolve")
     def resolve(decision_id: str, body: ResolveIn, who: str = Depends(principal)):

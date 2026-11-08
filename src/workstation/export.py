@@ -59,6 +59,11 @@ def slug(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", folded.lower()).strip("-")[:60].strip("-") or "decision"
 
 
+def record_filename(d: dict, tz: str) -> str:
+    when = datetime.fromisoformat(d["resolved_at"]).astimezone(ZoneInfo(tz)).date().isoformat()
+    return f"{when}-{slug(d['question'])}.md"
+
+
 def render_record(d: dict, tasks: list[dict], project: str, tz: str, name) -> dict:
     """`name` maps an identity to its display name. Returns {"filename", "markdown"}."""
     when = datetime.fromisoformat(d["resolved_at"]).astimezone(ZoneInfo(tz)).date().isoformat()

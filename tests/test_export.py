@@ -87,7 +87,7 @@ def test_cli_prints_and_writes_the_record(ws, tmp_path, monkeypatch, capsys):
     from workstation import cli
     import httpx
     monkeypatch.setattr(cli, "client", lambda args, who: type("C", (), {
-        "get": staticmethod(lambda path: c.get(path, headers=H(tokens, who)))})())
+        "get": staticmethod(lambda path, **kw: c.get(path, headers=H(tokens, who), **kw))})())
     cli.main(["--data", str(app.state.ws.data), "record", did])
     printed = capsys.readouterr().out
     assert printed.startswith("# Cache the home view?")

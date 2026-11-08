@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 
 from .principals import AGENTS, by_handle, can, is_human
 from .principals import owner as owner_id
+from . import store as _store
 from .store import DECISION_STATES, TASK_STATES, TASK_TRANSITIONS, Store, new_id
 
 MENTION_RE = re.compile(r"(?<![\w@./])@([A-Za-z][\w-]*)")
@@ -162,6 +163,20 @@ class Service:
                                                       "milestone": milestone}, project_id=id,
                           idempotency_key=idempotency_key)
         return self.s.projects[id]
+
+    @atomic
+    def record_refusal(self, actor: str, action: str, reason: str) -> bool:
+        """Log that an agent token tried something reserved for the owner (shown in the weekly review).
+        The same refusal repeated within a minute is logged once, so a looping agent cannot bloat the log."""
+        if is_human(actor) or actor not in AGENTS:
+            return False
+        last = self.s.events[-1] if self.s.events else None
+        if last and last["event_type"] == "action_refused" and last["actor"] == actor \
+                and last["payload"]["action"] == action \
+                and (datetime.fromisoformat(_store.now_iso()) - datetime.fromisoformat(last["recorded_at"])).total_seconds() < 60:
+            return False
+        self.store.append("action_refused", actor, {"action": action, "reason": reason[:200]})
+        return True
 
     # ---- tasks ---------------------------------------------------------------------------
     @atomic

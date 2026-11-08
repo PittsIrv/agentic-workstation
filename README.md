@@ -20,6 +20,7 @@ It runs on your machine, stores everything in one SQLite file, and uses the Clau
 - **Tasks:** owner, due date with time zone, linked artifacts (commits verified with `git cat-file`), reviews and a full history. Agents cannot mark work done.
 - **Event intake:** other assistants or scripts report tasks, blocks and decisions through one authenticated endpoint, with idempotent delivery ([docs/events.md](docs/events.md)).
 - **Tickets:** open tickets from a Markdown file you point it at, shown on Home.
+- **Weekly review:** one page for the last seven days, as a [review](#weekly-review) you can export to Markdown.
 - **Activity:** every change, who made it, and from which source.
 
 ## Requirements
@@ -127,6 +128,25 @@ If we need two-way messaging.
 ```
 
 The text in a record comes from agents and threads, so it is escaped: HTML, Markdown markup, link and image syntax, and line-start constructs such as headings, lists, quotes and tables are neutralized, and only `http(s)` links are written. A bare web address typed into a position is shown as that address and a viewer may link it.
+
+## Weekly review
+
+Open **Review** in the header for one page on any seven days: the decisions resolved (each with the file name of its [decision record](#decision-records)), the tasks accepted, open tasks with no activity for seven days or more, decisions still pending with their age, per-agent counts (replies, tasks done, refused attempts) and a rollup per project. **Previous week** and **Next week** move the window.
+
+![The weekly review page](docs/img/review.png)
+
+*Screenshot uses demo data.*
+
+- **Window:** seven calendar days in your display time zone (`display.timezone`), from midnight on the first day to midnight after the last. The default ends today. Open, stale and pending are judged at the end of the window, rebuilt from each record's history, so a task finished later still counts as open in the week it was open.
+- **Refused attempts** count requests an agent token made for something reserved for the owner (resolving decisions, accepting tasks, opening threads and the like). Each is logged as an `action_refused` event; the same refusal repeated within a minute is logged once.
+- **Markdown:** **Copy review as Markdown** or **Download .md** (`YYYY-MM-DD-weekly-review.md`), or from the shell, read-only with any identity's token:
+
+```bash
+uv run ws review                              # the 7 days ending today, printed
+uv run ws review --end 2026-11-08 --out notes/   # writes notes/2026-11-08-weekly-review.md
+```
+
+`GET /api/review?end=YYYY-MM-DD` returns the data and `GET /api/review/record?end=...` the Markdown. The Markdown escapes agent text the same way decision records do.
 
 ## Configuration
 
