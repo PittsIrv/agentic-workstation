@@ -47,6 +47,8 @@ def main(argv=None) -> None:
     s = sub.add_parser("export"); s.add_argument("path")
     s = sub.add_parser("record"); s.add_argument("decision_id"); s.add_argument("--as", dest="who", default=None)
     s.add_argument("--out", default=None, help="write to this file or directory instead of printing")
+    s = sub.add_parser("review"); s.add_argument("--end", default=None, help="last day of the 7-day window, YYYY-MM-DD (default today)")
+    s.add_argument("--as", dest="who", default=None); s.add_argument("--out", default=None, help="write to this file or directory instead of printing")
     s = sub.add_parser("backup"); s.add_argument("path", nargs="?")
     s = sub.add_parser("project"); s.add_argument("id"); s.add_argument("name"); s.add_argument("--goal", default="")
     s.add_argument("--stage", default=""); s.add_argument("--milestone", default="")
@@ -100,8 +102,10 @@ def main(argv=None) -> None:
         from .store import Store
         n = Store(data_dir(args) / "workstation.db").export_jsonl(Path(args.path))
         print(f"{n} events → {args.path}")
-    elif args.cmd == "record":
-        r = client(args, args.who or owner()).get(f"/api/decisions/{args.decision_id}/record")
+    elif args.cmd in ("record", "review"):
+        c = client(args, args.who or owner())
+        r = c.get(f"/api/decisions/{args.decision_id}/record") if args.cmd == "record" else \
+            c.get("/api/review/record", params={"end": args.end} if args.end else None)
         if r.status_code >= 400:
             sys.exit(f"{r.status_code}: {r.text}")
         rec = r.json()
@@ -111,7 +115,7 @@ def main(argv=None) -> None:
                 dest.mkdir(parents=True, exist_ok=True)
             dest = dest / rec["filename"] if dest.is_dir() else dest
             dest.write_text(rec["markdown"])
-            print(f"decision record written: {dest}")
+            print(f"written: {dest}")
         else:
             print(rec["markdown"], end="")
     elif args.cmd == "backup":
