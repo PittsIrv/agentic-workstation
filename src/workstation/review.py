@@ -60,7 +60,7 @@ def build(svc, tz_name: str, end: date | None = None, now: datetime | None = Non
         for prev, h in zip([None] + hist, hist):
             if h["status"] == "done" and (prev is None or prev["status"] != "done") and in_window(h["at"]):
                 done_at = h["at"]
-        if done_at:
+        if done_at and (_state_at(t, ref) or ("", None))[0] == "done":  # reopened before the window ended: not accepted
             accepted.append({"id": t["id"], "title": t["title"], "owner": t["owner"], "owner_display": name(t["owner"]),
                              "on": local(done_at), "at": done_at, "project_id": t["project_id"],
                              "project": pname(t["project_id"])})
@@ -81,7 +81,12 @@ def build(svc, tz_name: str, end: date | None = None, now: datetime | None = Non
                             "project": pname(d["project_id"])})
     pending.sort(key=lambda r: (-r["age_days"], r["id"]))
 
-    events = [e for e in svc.s.events if in_window(e["recorded_at"])]
+    events = []
+    for e in reversed(svc.s.events):  # the log is chronological: stop once past the start of the window
+        if _t(e["recorded_at"]) < start:
+            break
+        if in_window(e["recorded_at"]):
+            events.append(e)
     agents = []
     for a in REVIEWED_AGENTS:
         agents.append({"id": a, "display": name(a),

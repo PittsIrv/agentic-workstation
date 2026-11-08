@@ -137,8 +137,8 @@ Open **Review** in the header for one page on any seven days: the decisions reso
 
 *Screenshot uses demo data.*
 
-- **Window:** seven calendar days in your display time zone (`display.timezone`), from midnight on the first day to midnight after the last. The default ends today. Open, stale and pending are judged at the end of the window, rebuilt from each record's history, so a task finished later still counts as open in the week it was open.
-- **Refused attempts** count requests an agent token made for something reserved for the owner (resolving decisions, accepting tasks, opening threads and the like). Each is logged as an `action_refused` event; the same refusal repeated within a minute is logged once.
+- **Window:** seven calendar days in your display time zone (`display.timezone`), from midnight on the first day to midnight after the last. The default ends today. Open, stale and pending are judged at the end of the window, rebuilt from each record's history, so a task finished later still counts as open in the week it was open. A task counts as accepted when it moved to done in the window and is still done at the window's end; one reopened before then does not.
+- **Refused attempts** count requests an agent token made for something reserved for the owner (resolving decisions, accepting tasks, opening threads and the like). Each is logged as an `action_refused` event; the same refusal by the same agent repeated within a minute is logged once.
 - **Markdown:** **Copy review as Markdown** or **Download .md** (`YYYY-MM-DD-weekly-review.md`), or from the shell, read-only with any identity's token:
 
 ```bash

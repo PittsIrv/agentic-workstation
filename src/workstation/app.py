@@ -206,10 +206,10 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         """Log an agent's refused attempt (owner-only action) for the weekly review."""
         try:
             who = principal(request)
-        except HTTPException:
-            return
-        route = getattr(request.scope.get("route"), "path", request.url.path)
-        ws.svc.record_refusal(who, f"{request.method} {route}", reason)
+            route = getattr(request.scope.get("route"), "path", request.url.path)
+            ws.svc.record_refusal(who, f"{request.method} {route}", reason)
+        except Exception:  # logging a refusal must never turn the 403 into a 500
+            pass
 
     @app.exception_handler(Forbidden)
     async def _f(request, e):

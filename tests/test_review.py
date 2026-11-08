@@ -67,6 +67,13 @@ def world(tmp_path, monkeypatch):
     finish(t_edge_in, "11-09", "04:30")
     t_edge_out = task("11-06", "Done just after midnight")
     finish(t_edge_out, "11-09", "05:30")
+    # done, then reopened inside the week: not accepted; done, reopened after the week: still accepted that week
+    t_reopened = task("11-02", "Reopened the same week")
+    finish(t_reopened, "11-04", "09:00")
+    move(t_reopened, "11-06", "09:00", "in_progress")
+    t_later = task("11-02", "Reopened the week after")
+    finish(t_later, "11-04", "09:30")
+    move(t_later, "11-12", "09:00", "in_progress")
     # decisions
     d_resolved = decision("10-25", "Adopt SSE?")
     resolve(d_resolved, "11-04")
@@ -103,14 +110,15 @@ def test_week_of_nov_2_to_8_counts(world):
     assert (rv["start"], rv["end"], rv["tz"]) == ("2026-11-02", "2026-11-08", TZ)
     assert [d["question"] for d in rv["decisions_resolved"]] == ["Adopt SSE?"]
     assert rv["decisions_resolved"][0]["outcome"] == "Yes"
-    assert titles(rv["tasks_accepted"]) == ["Done at 23:30 on the last day", "Finished early in the week"]
+    assert titles(rv["tasks_accepted"]) == ["Done at 23:30 on the last day", "Finished early in the week",
+                                             "Reopened the week after"]
     assert titles(rv["stale_tasks"]) == ["Old and quiet"] and rv["stale_tasks"][0]["idle_days"] == 19
     assert [(d["question"], d["age_days"]) for d in rv["pending_decisions"]] == [("Never answered", 11), ("Answered next week", 3)]
     by = {a["id"]: a for a in rv["agents"]}
     assert (by["claude"]["replies"], by["claude"]["tasks_done"], by["claude"]["refusals"]) == (2, 1, 1)
     assert (by["gpt"]["replies"], by["gpt"]["refusals"]) == (1, 0)
     roll = {p["id"]: p for p in rv["projects"]}
-    assert (roll["general"]["decisions_resolved"], roll["general"]["tasks_accepted"], roll["site"]["tasks_accepted"]) == (1, 1, 1)
+    assert (roll["general"]["decisions_resolved"], roll["general"]["tasks_accepted"], roll["site"]["tasks_accepted"]) == (1, 2, 1)
     assert roll["general"]["stale"] == 1 and roll["general"]["pending_decisions"] == 2
 
 
@@ -123,7 +131,7 @@ def test_week_boundaries_follow_the_configured_zone(world):
     assert {a["id"]: a["refusals"] for a in next_week["agents"]}["gpt"] == 1
     # the same history in UTC: Nov 9 04:30Z and 05:30Z both fall after the week ends at 00:00Z
     utc = weekly.build(world, "UTC", date(2026, 11, 8), NOW)
-    assert titles(utc["tasks_accepted"]) == ["Finished early in the week"]
+    assert titles(utc["tasks_accepted"]) == ["Finished early in the week", "Reopened the week after"]
     assert titles(weekly.build(world, "UTC", date(2026, 11, 15), datetime(2026, 11, 16, tzinfo=timezone.utc))["tasks_accepted"]) == [
         "Done at 23:30 on the last day", "Done just after midnight"]
 
@@ -140,7 +148,8 @@ def test_default_window_ends_today_and_has_links(world):
     rv = weekly.build(world, TZ, None, NOW)
     assert (rv["start"], rv["end"], rv["next"]) == ("2026-11-04", "2026-11-10", None)
     assert rv["prev"] == "2026-11-03"
-    assert titles(rv["tasks_accepted"]) == ["Done at 23:30 on the last day", "Done just after midnight"]
+    assert titles(rv["tasks_accepted"]) == ["Done at 23:30 on the last day", "Done just after midnight",
+                                             "Reopened the week after"]  # "Reopened the same week" is open again at the end
     mid = week(world)
     assert (mid["prev"], mid["next"]) == ("2026-11-01", "2026-11-10")
 
@@ -229,3 +238,12 @@ def test_hostile_text_cannot_inject_markup_into_a_rendered_review():
     assert not [a for a in dom.attrs if a.startswith("on")] and not dom.urls
     assert hostile_review().count("\n## ") == 6
     assert "onerror" in hostile_review()  # still readable as text
+
+
+def test_refusal_dedupe_survives_interleaved_events_and_other_agents(world):
+    svc = world
+    assert svc.record_refusal("gpt", "POST /x", "r") is True      # clock is 2026-11-12 10:00 from the fixture
+    assert svc.record_refusal("claude", "POST /x", "r") is True   # another agent is its own stream
+    assert svc.record_refusal("gpt", "POST /x", "r") is False     # gpt again within the minute, claude's event in between
+    assert svc.record_refusal("gpt", "POST /y", "r") is True      # a different action counts
+    assert svc.record_refusal("owner", "POST /x", "r") is False   # the owner is never logged
