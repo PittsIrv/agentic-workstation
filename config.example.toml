@@ -29,6 +29,9 @@ daybook_url = "http://127.0.0.1:8765"
 daybook_scope = ""
 
 [reminders]
+# Optional local fallback for people with no personal assistant; off by default. Your agents or assistant should read
+# `ws now` / GET /api/needs-now instead. Set true to turn the rule below on (banner, pause, reminder log, `ws remind`).
+enabled = false
 # The first reminder rule. Every value here is a default chosen by this project, not a researched number; change freely.
 # An item is "due" when it has waited past the threshold for its urgency (minutes), is overdue, or its deadline is
 # within deadline_window_minutes. A due item is reminded only outside quiet hours, while the day's cap is not used up,

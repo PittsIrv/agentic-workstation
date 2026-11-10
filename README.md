@@ -88,6 +88,17 @@ The same through the API: `POST /api/asks` (`title`, `kind`, `text`, `blocked`, 
 
 Ready-to-copy instructions that teach Codex and Claude Code to submit items are in [docs/agent-instructions/](docs/agent-instructions/). The plan for time tracking and reminders is in [docs/unified-workspace.md](docs/unified-workspace.md).
 
+## Any agent: add Codex, Claude Code, Muse or your own
+
+Besides `claude`, `gpt` and `gemini`, you can add an agent kind by name: **Set up > Add another agent**, or
+
+```bash
+uv run ws agent add muse --display Muse     # prints its copy-ready instructions; the token goes to data/secrets/muse.token
+uv run ws agent list
+```
+
+A name is lowercase letters, digits and `-` (up to 32) and cannot be `owner`, `claude`, `gpt`, `gemini` or `system`. The agent appears under **Your agents** and can submit items (`ws ask --as muse`), work on tasks assigned to it, read its own state (`ws now --as muse`) and pick up mentions (`ws inbox`, `ws claim`, `ws reply`). It cannot answer items, accept or reassign tasks, or change settings. The server never runs an added agent. The design for agents working with each other is in [docs/workplace-design.md](docs/workplace-design.md).
+
 ## Time
 
 Open **Time** in the header for the seven days ending today: a bar per day split into Focus, Entertainment, Other and Untagged, the week's total over the days that were recorded, and the latest recorded day. It reads [Daybook](https://github.com/PittsIrv/daybook), a separate local Screen Time collector for Mac, through Daybook's own loopback page (`http://127.0.0.1:8765/api/data`) each time you open the page. Only day totals and the purpose split are taken; app names and calendar titles are discarded. Nothing is stored here: no time data enters the database or the repository. This program asks for no macOS permission.
@@ -105,6 +116,8 @@ uv run ws time --end 2026-11-08
 `GET /api/time?end=YYYY-MM-DD` is owner only. Other sources can be added by implementing the small `TimeSource` interface in `src/workstation/timesources.py` (`read(start, end)` returning day totals).
 
 ## Reminders
+
+**Optional local fallback, off by default.** Reminding you is the job of your own agents or a personal assistant that reads the board (`ws now`, `GET /api/needs-now`). The built-in rule below is for people with no assistant: it stays in the code and does nothing until you set `enabled = true` under `[reminders]` in `data/config.toml` and restart `ws serve`. While it is off, the reminder banner, pause buttons, reminder log and `ws remind` are hidden or refuse (`ws remind` says so). **What needs you now** and `ws now` work either way.
 
 **What needs you now** is one computation over the inbox: the items you should act on now, each with why. An item is *due* when its deadline has passed, its deadline is close, or it has waited past a limit that depends on its urgency (30 min high, 4 h normal, 24 h low). Home's **Needs you now**, `GET /api/needs-now`, `ws now` and the reminders all read that one list, so they cannot disagree. Items you snoozed are left out until the snooze ends; the rest stay in the Inbox.
 

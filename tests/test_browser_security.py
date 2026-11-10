@@ -115,7 +115,7 @@ def site(tmp_path_factory, fake_daybook):
     (data / "config.toml").write_text(
         f"[owner]\nname = {esc(HOSTILE)}\n[tickets]\npath = {esc(str(tickets))}\ntitle = {esc(HOSTILE)}\n"
         f"[[coverage]]\nsource = {esc(HOSTILE)}\nstate = {esc(HOSTILE)}\n"
-        f'[reminders]\nwait_minutes_high = 0\nquiet_start = "00:00"\nquiet_end = "00:00"\n'
+        f'[reminders]\nenabled = true\nwait_minutes_high = 0\nquiet_start = "00:00"\nquiet_end = "00:00"\n'
         f"[time]\ndaybook_url = {esc(fake_daybook)}\ndaybook_scope = {esc(HOSTILE)}\n")
     reply = (f"{HOSTILE}\n```json\n" + json.dumps({
         "position": HOSTILE, "options": [HOSTILE, "Safe option"], "verdict": "comment",
@@ -188,6 +188,13 @@ def site(tmp_path_factory, fake_daybook):
     answered = http.post("/api/asks", headers={"Authorization": f"Bearer {agent_tokens['claude']}"},
                          json={"title": HOSTILE[:200], "kind": "question"}).json()["ask"]
     http.post(f"/api/asks/{answered['id']}/answer", json={"resolution": "answered", "note": HOSTILE}).raise_for_status()
+    # an agent kind the owner added, with markup in its name and role: shown as plain text everywhere
+    plain = "".join(c for c in HOSTILE if c.isprintable())
+    http.post("/api/agents", json={"id": "muse", "display": plain[:40], "role": plain[:200]}).raise_for_status()
+    muse = {"Authorization": "Bearer " + app.state.ws.tokens.issue("muse")}
+    http.post("/api/asks", headers=muse, json={"title": HOSTILE[:200], "kind": "question", "text": HOSTILE}).raise_for_status()
+    http.post("/api/tasks", headers=muse, json={"title": HOSTILE, "project_id": "general", "owner": "muse",
+                                                "status": "in_progress", "next_action": HOSTILE}).raise_for_status()
     profile = tmp_path_factory.mktemp("profile")
     yield {"base": base, "http": http, "profile": profile,
            "pages": {"home": "#/", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
