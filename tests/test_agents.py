@@ -181,3 +181,20 @@ def test_the_instructions_template_has_no_unfilled_placeholders():
     import tempfile
     text = agent_instructions(tempfile.gettempdir(), "muse")
     assert text and "AGENT_ID" not in text and "WORKSTATION_DIR" not in text and "--as muse" in text
+
+
+def test_a_placeholder_inside_a_folder_name_is_not_rewritten(tmp_path):
+    from workstation.app import agent_instructions
+    d = tmp_path / "my_AGENT_ID_data"
+    d.mkdir()
+    text = agent_instructions(d, "muse")
+    assert "my_AGENT_ID_data" in text and "--as muse" in text
+
+
+def test_removing_an_agent_from_the_file_kills_its_token(ws):
+    app, c, tokens = ws
+    add(c, tokens, "muse")
+    h = as_agent(c, tokens, "muse")
+    assert c.get("/api/me", headers=h).status_code == 200
+    (app.state.ws.data / "agents.json").write_text("{}")
+    assert c.get("/api/me", headers=h).status_code == 401

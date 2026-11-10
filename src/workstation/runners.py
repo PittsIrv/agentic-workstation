@@ -348,7 +348,7 @@ class Dispatcher:
 
     def status(self) -> list[dict]:
         out = []
-        for pid, a in AGENTS.items():
+        for pid, a in list(AGENTS.items()):
             if a["kind"] != "agent":
                 continue
             ok, why = self.probe(pid)

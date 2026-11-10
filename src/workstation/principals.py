@@ -69,6 +69,9 @@ DEFAULT_ROLE = "Agent added by the owner; works through the board"
 class InvalidAgent(ValueError): ...
 
 
+_registry_lock = threading.RLock()  # requests run in a thread pool; the registry is changed in place under this lock
+
+
 def _plain(text: object, what: str, limit: int) -> str:
     if not isinstance(text, str) or not text.strip() or len(text.strip()) > limit \
             or any(not c.isprintable() for c in text):
@@ -90,25 +93,32 @@ def _agents_file(data_dir: Path) -> Path:
 
 def load_custom(data_dir: Path) -> None:
     """Install the owner-added agents from `<data>/agents.json`, replacing any installed by an earlier call."""
-    for pid in [p for p, a in AGENTS.items() if a.get("custom")]:
-        del AGENTS[pid]
-    f = _agents_file(data_dir)
-    if not f.exists():
-        return
-    for pid, card in json.loads(f.read_text()).items():
-        if not isinstance(card, dict):
-            continue
-        try:
-            check_new_agent(pid, card.get("display"), card.get("role"))
-        except InvalidAgent:
-            continue  # a hand-edited file never installs a reserved or malformed id
-        AGENTS[pid] = {"kind": "agent", "display": card["display"], "handle": pid, "role": card.get("role") or DEFAULT_ROLE,
-                       "capabilities": set(CUSTOM_CAPS), "projects": {"*"}, "runtime": "board", "custom": True}
+    with _registry_lock:
+        for pid in [p for p, a in list(AGENTS.items()) if a.get("custom")]:
+            del AGENTS[pid]
+        f = _agents_file(data_dir)
+        if not f.exists():
+            return
+        for pid, card in json.loads(f.read_text()).items():
+            if not isinstance(card, dict):
+                continue
+            try:
+                check_new_agent(pid, card.get("display"), card.get("role"))
+            except InvalidAgent:
+                continue  # a hand-edited file never installs a reserved or malformed id
+            AGENTS[pid] = {"kind": "agent", "display": card["display"], "handle": pid,
+                           "role": card.get("role") or DEFAULT_ROLE, "capabilities": set(CUSTOM_CAPS),
+                           "projects": {"*"}, "runtime": "board", "custom": True}
 
 
-def custom_mtime(data_dir: Path) -> float:
+def custom_mtime(data_dir: Path) -> tuple[int, int]:
+    """A change marker for agents.json (modification time in ns and size), (0, 0) when the file is absent."""
     f = _agents_file(data_dir)
-    return f.stat().st_mtime if f.exists() else 0.0
+    try:
+        st = f.stat()
+    except FileNotFoundError:
+        return (0, 0)
+    return (st.st_mtime_ns, st.st_size)
 
 
 def add_custom(data_dir: Path, agent_id: str, display: str | None = None, role: str | None = None) -> dict:

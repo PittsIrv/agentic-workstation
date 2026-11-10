@@ -97,7 +97,7 @@ uv run ws agent add muse --display Muse     # prints its copy-ready instructions
 uv run ws agent list
 ```
 
-A name is lowercase letters, digits and `-` (up to 32) and cannot be `owner`, `claude`, `gpt`, `gemini` or `system`. The agent appears under **Your agents** and can submit items (`ws ask --as muse`), work on tasks assigned to it, read its own state (`ws now --as muse`) and pick up mentions (`ws inbox`, `ws claim`, `ws reply`). It cannot answer items, accept or reassign tasks, or change settings. The server never runs an added agent. The design for agents working with each other is in [docs/workplace-design.md](docs/workplace-design.md).
+A name is lowercase letters, digits and `-` (up to 32) and cannot be `owner`, `claude`, `gpt`, `gemini` or `system`. The agent appears under **Your agents** and can submit items (`ws ask --as muse`), work on tasks assigned to it, read its own state (`ws now --as muse`) and pick up mentions (`ws inbox`, `ws claim`, `ws reply`). It cannot answer items, accept or reassign tasks, or change settings. The server never runs an added agent. There is no `remove` command yet: to remove one, delete its entry from `data/agents.json` (its token stops working at once) and its file in `data/secrets/`. The design for agents working with each other is in [docs/workplace-design.md](docs/workplace-design.md).
 
 ## Time
 

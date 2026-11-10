@@ -107,7 +107,7 @@ def asks_for(svc: Service, who: str, status: str | None) -> list[dict]:
 def agent_work(svc: Service) -> list[dict]:
     """Per agent: what it is waiting on the owner for and what it is working on. Counts and short titles only."""
     out = []
-    for pid, a in AGENTS.items():
+    for pid, a in list(AGENTS.items()):
         if a["kind"] != "agent":
             continue
         asks = [x for x in svc.s.asks.values() if x["asked_by"] == pid and x["status"] == "open"]

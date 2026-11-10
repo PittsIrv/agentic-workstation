@@ -7,6 +7,7 @@ writes must carry `X-Workstation: 1` and a same-origin `Origin`, so other sites 
 from __future__ import annotations
 
 import fcntl
+import re
 import secrets
 import shlex
 import threading
@@ -112,8 +113,10 @@ def agent_instructions(data_dir: Path, agent_id: str) -> str | None:
     f = root / "docs" / "agent-instructions" / "AGENT.snippet.md"
     if not f.exists():
         return None
-    text = f.read_text().replace("WORKSTATION_DIR/data", shlex.quote(str(Path(data_dir).resolve())))
-    return text.replace("WORKSTATION_DIR", shlex.quote(str(root))).replace("AGENT_ID", agent_id)
+    fill = {"WORKSTATION_DIR/data": shlex.quote(str(Path(data_dir).resolve())),
+            "WORKSTATION_DIR": shlex.quote(str(root)), "AGENT_ID": agent_id}
+    # one pass, so a folder name that happens to contain a placeholder is never rewritten
+    return re.sub("WORKSTATION_DIR/data|WORKSTATION_DIR|AGENT_ID", lambda m: fill[m.group(0)], f.read_text())
 
 
 class AgentIn(BaseModel):
@@ -210,7 +213,7 @@ class Workstation:
             raise RuntimeError(f"another workstation server is using {self.data}") from None
         self.store = Store(self.data / "workstation.db")
         self.tokens = Tokens(self.data / "tokens.json")
-        self._agents_mtime = -1.0
+        self._agents_mtime = None
         self.sync_agents()
         self.dispatcher: Dispatcher | None = None
         self.svc = Service(self.store, on_dispatch=lambda d: self.dispatcher and self.dispatcher.submit(d))
@@ -220,7 +223,7 @@ class Workstation:
         if runners is None:
             runners = default_runners(self.config.claude_model, self.config.gpt_model, self.config.gpt_effort)
         self.dispatcher = Dispatcher(self.svc, runners)
-        self._agents_mtime = -1.0
+        self._agents_mtime = None
         self.sync_agents()
         self.login_codes: dict[str, float] = {}
         self.owner_file = self.data / "secrets" / f"{owner_id()}.token"
@@ -240,7 +243,7 @@ class Workstation:
         self._agents_mtime = m
         runners = getattr(getattr(self, "dispatcher", None), "runners", None)
         if runners is not None:
-            for pid, a in AGENTS.items():
+            for pid, a in list(AGENTS.items()):
                 if a.get("custom"):
                     runners.setdefault(pid, PullOnly())
 
@@ -311,7 +314,7 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         auth = request.headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
             who = ws.tokens.who(auth[7:].strip())
-            if not who:
+            if not who or who not in AGENTS:  # a token of an agent that was removed from agents.json is dead
                 raise HTTPException(401, "unknown token")
             return who
         who = ws.tokens.who(request.cookies.get(COOKIE))
