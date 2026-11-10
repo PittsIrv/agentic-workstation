@@ -22,6 +22,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
 from . import inbox as inbox_view
+from . import reminders
 from . import timesources
 from . import views
 from . import config as configuration
@@ -84,6 +85,24 @@ class AskIn(BaseModel):
 class AnswerIn(BaseModel):
     resolution: str
     note: str = ""
+
+
+class SnoozeIn(BaseModel):
+    key: str
+    minutes: int
+
+
+class KeyIn(BaseModel):
+    key: str
+
+
+class PauseIn(BaseModel):
+    minutes: int | None = None
+
+
+class RunIn(BaseModel):
+    channel: str = "print"
+    dry_run: bool = False
 
 
 class ResolveIn(BaseModel):
@@ -524,6 +543,57 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     @app.post("/api/asks/{ask_id}/withdraw")
     def withdraw_ask(ask_id: str, who: str = Depends(principal)):
         return inbox_view.ask_card(ws.svc, ws.svc.withdraw_ask(who, ask_id))
+
+    # ---- reminders: what needs the owner now, the rule, snooze and pause, the log ----------------
+
+    def rcfg() -> dict:
+        return ws.config.reminders
+
+    @app.get("/api/needs-now")
+    def needs_now(full: bool = False, who: str = Depends(principal)):
+        """The owner gets the items to act on now, each with why. An agent gets only the state of its own items and
+        whether the owner already has items due (no other agent's titles, no time data)."""
+        with ws.store.lock:
+            if is_human(who):
+                return reminders.needs_now(ws.svc, rcfg(), views.DISPLAY_TZ, full=full)
+            return reminders.agent_view(ws.svc, who, rcfg(), views.DISPLAY_TZ)
+
+    @app.get("/api/reminders/settings")
+    def reminder_settings(_: str = Depends(owner)):
+        with ws.store.lock:
+            return reminders.settings(rcfg(), ws.config.reminders_set, views.DISPLAY_TZ, ws.svc)
+
+    @app.get("/api/reminders/log")
+    def reminder_log(_: str = Depends(owner)):
+        with ws.store.lock:
+            return reminders.log(ws.svc, rcfg())
+
+    @app.post("/api/snooze")
+    def snooze(body: SnoozeIn, who: str = Depends(owner)):
+        with ws.store.lock:
+            return {"key": body.key, "until": reminders.snooze(ws.svc, who, body.key, body.minutes)}
+
+    @app.post("/api/unsnooze")
+    def unsnooze(body: KeyIn, who: str = Depends(owner)):
+        with ws.store.lock:
+            reminders.unsnooze(ws.svc, who, body.key)
+        return {"key": body.key}
+
+    @app.post("/api/reminders/pause")
+    def pause(body: PauseIn, who: str = Depends(owner)):
+        with ws.store.lock:
+            return {"paused": reminders.pause(ws.svc, who, body.minutes)}
+
+    @app.post("/api/reminders/resume")
+    def resume(who: str = Depends(owner)):
+        with ws.store.lock:
+            reminders.resume(ws.svc, who)
+        return {"paused": None}
+
+    @app.post("/api/reminders/run")
+    def reminders_run(body: RunIn, who: str = Depends(owner)):
+        """Which due items to remind about now; records them unless dry_run. The caller prints or notifies."""
+        return reminders.run(ws.svc, who, rcfg(), views.DISPLAY_TZ, body.channel, body.dry_run)
 
     # ---- normalised event intake (assistants and bridges) ----------------------------------
 

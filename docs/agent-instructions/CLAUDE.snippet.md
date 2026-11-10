@@ -18,3 +18,18 @@ uv --directory WORKSTATION_DIR run ws --data WORKSTATION_DIR/data ask "Approve r
 - Answers: `... ws --data WORKSTATION_DIR/data asks --as claude --status closed` (`resolution` and `note`). You
   cannot answer your own items.
 - Everything you submit is shown as plain text. Never include secrets.
+
+## Before you interrupt, and what happened to your items
+
+Ask what the person already has waiting, then decide whether yours is worth adding now:
+
+```bash
+uv --directory WORKSTATION_DIR run ws --data WORKSTATION_DIR/data now --as claude
+```
+
+- `advice` is `hold` when the person already has items due; submit a new item then only if it cannot wait, and prefer
+  one item that covers the blocker over several.
+- `mine` lists your own items with a `state`: `waiting` (not due yet), `due` (the person's reminders will pick it up),
+  `snoozed` (they chose to look later, see `snoozed_until`; do not resubmit), `answered` (read `resolution` and `note`)
+  or `withdrawn`. `reminders_paused` and `quiet_hours_now` tell you not to expect a quick answer.
+- You cannot answer, snooze or pause anything for the person, and you never see another agent's items or any time data.

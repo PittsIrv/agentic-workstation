@@ -88,6 +88,9 @@ def inbox(svc: Service, now: datetime) -> dict:
     for e in items:
         e["waiting_s"] = max(0, int((now - _dt(e["waiting_since"])).total_seconds()))
         e["overdue"] = bool(e.get("due_at")) and _dt(e["due_at"]) < now
+        e["key"] = f"{e['source']}:{e['id']}"
+        until = svc.s.snoozes.get(e["key"])
+        e["snoozed_until"] = until if until and _dt(until) > now else None
     closed = sorted((a for a in svc.s.asks.values() if a["status"] != "open"), key=lambda a: a["closed_at"], reverse=True)
     return {"now": now.isoformat(timespec="seconds"), "items": items,
             "answered": [ask_card(svc, a) for a in closed[:RECENT_ANSWERED]]}

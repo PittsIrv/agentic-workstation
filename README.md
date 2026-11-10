@@ -104,6 +104,30 @@ uv run ws time --end 2026-11-08
 
 `GET /api/time?end=YYYY-MM-DD` is owner only. Other sources can be added by implementing the small `TimeSource` interface in `src/workstation/timesources.py` (`read(start, end)` returning day totals).
 
+## Reminders
+
+**What needs you now** is one computation over the inbox: the items you should act on now, each with why. An item is *due* when its deadline has passed, its deadline is close, or it has waited past a limit that depends on its urgency (30 min high, 4 h normal, 24 h low). Home's **Needs you now**, `GET /api/needs-now`, `ws now` and the reminders all read that one list, so they cannot disagree. Items you snoozed are left out until the snooze ends; the rest stay in the Inbox.
+
+The first reminder rule is conservative on purpose. A due item is reminded only if reminders are not paused, it is outside quiet hours (21:00 to 08:00), fewer than 3 reminders went out today, the same item was not reminded in the last 24 hours, and you have not answered or snoozed it. The program cannot see whether you are in focused work right now (Daybook records finished days only), so it prefers fewer, later reminders: one you mute is worth nothing. Every number is this project's own placeholder, not a researched value. See and change them: **Set up > Reminders** (read-only table with the defaults) and `[reminders]` in `data/config.toml` ([config.example.toml](config.example.toml)); restart `ws serve` after a change.
+
+In the page: a banner shows when something needs you (not in quiet hours or while paused); each row has **Snooze** (1 h, 4 h, 1 day) and Home and Set up have **Pause reminders** (1 h, 8 h, until you resume). The **Activity** page starts with the **reminder log**: what was reminded, when, why it was due, and whether the item was answered within 120 minutes (`acted_window_minutes`), later, snoozed, or not yet. Facts only, no score.
+
+On the machine: `ws remind` prints due reminders and records that it did; `--dry-run` records nothing; `--notify` also asks the system for a notification (macOS `osascript`, Linux `notify-send`). Printing needs no permission. A notification may need one: on macOS allow notifications for Script Editor in System Settings > Notifications, or nothing shows; if the tool is missing the command says so and prints. The server sends nothing off the machine and calls no agent. To run it on a schedule, for example every 30 minutes on a Mac or Linux box (the rule itself limits how many reminders go out):
+
+```bash
+crontab -e   # add:  */30 * * * * cd /path/to/agentic-workstation && uv run ws remind --notify >> /tmp/ws-remind.log 2>&1
+```
+
+```bash
+uv run ws now                  # owner: items to act on now, each with why, reminder state
+uv run ws now --as claude      # an agent: its own items' states (due, snoozed, answered), whether the owner is already loaded
+uv run ws remind --dry-run     # what would be reminded now
+uv run ws snooze ask:<id> --minutes 240
+uv run ws pause --minutes 60   # or no --minutes: until `ws resume`
+```
+
+Agents can read their own side of `GET /api/needs-now`; snooze, pause, run, settings and the log are owner only (an agent gets 403 and the attempt is logged for the weekly review). The agent instructions in [docs/agent-instructions/](docs/agent-instructions/) teach `ws now` before interrupting.
+
 ## Decision records
 
 A resolved decision exports as a Markdown file you can commit to your own repo, for example under `docs/decisions/`. Open the resolved card and use **Copy as decision record** or **Download .md** (`YYYY-MM-DD-<title>.md`). The workstation never writes into your repositories. When you resolve a card, the optional **Reason** and **Revisit when** fields are kept and exported.

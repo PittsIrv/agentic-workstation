@@ -28,6 +28,21 @@ daybook_url = "http://127.0.0.1:8765"
 # latest recorded day. A name Daybook does not have falls back to that default, with a note on the Time page.
 daybook_scope = ""
 
+[reminders]
+# The first reminder rule. Every value here is a default chosen by this project, not a researched number; change freely.
+# An item is "due" when it has waited past the threshold for its urgency (minutes), is overdue, or its deadline is
+# within deadline_window_minutes. A due item is reminded only outside quiet hours, while the day's cap is not used up,
+# not again inside repeat_minutes, and never once it is answered or snoozed. The page's pause switch stops all reminders.
+wait_minutes_high = 30
+wait_minutes_normal = 240
+wait_minutes_low = 1440
+deadline_window_minutes = 1440
+quiet_start = "21:00"   # local time in [display] timezone; start later than end means across midnight
+quiet_end = "08:00"
+daily_cap = 3
+repeat_minutes = 1440
+acted_window_minutes = 120   # reminder log: "acted on" means answered within this long after the reminder
+
 [agents.claude]
 # Model alias or id passed to `claude -p --model`.
 model = "sonnet"
