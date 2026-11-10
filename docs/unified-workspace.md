@@ -26,7 +26,9 @@ Limits **(default)**: title 200 characters, details 2000, blocked and cost 300; 
 
 ## 2. Time: where it went
 
-**Exists:** nothing. Home shows only what was recorded in the workstation.
+**Status (slice 2, built):** `TimeSource` interface plus a Daybook reader in `src/workstation/timesources.py`; `GET /api/time`, `ws time` and a Time page. Daybook is read through its own loopback API (`/api/health`, `/api/data`), not its files, so this program needs no macOS permission and Daybook's labels and overlap handling are reused. Finding that matters for slice 3: Daybook records finished days (yesterday, collected after 8 AM) and its hourly sessions need a separate exporter with Full Disk Access, so today's live focus is **not** available without a permission the user must grant in Daybook. Slice 3 should therefore not depend on "in focused work right now" from Daybook; options are in the Router note.
+
+**Exists (before slice 2):** nothing. Home shows only what was recorded in the workstation.
 
 **Needed:** per-day focused-time and app/category totals for today and the week, from a source the person already has. First source: Daybook (a Mac Screen Time collector), read at run time from its local data folder, read-only. **(proposal)** a small `TimeSource` interface with one method returning day totals (`day`, `seconds`, `category`/`app` label), so another source can be added without touching the rest. When Daybook is absent or unreadable the panel says "not connected" and how to connect; nothing else breaks. Where Daybook keeps its data and what it needs (macOS permissions) is read from Daybook's own documentation at slice time, not assumed here.
 

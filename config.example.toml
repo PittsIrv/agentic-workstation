@@ -19,6 +19,14 @@ port = 8770
 # Open items one agent may have waiting on you. A default chosen by the project, not a researched value.
 max_open_per_agent = 20
 
+[time]
+# Where the Time page reads from: "daybook" (default) or "off". Daybook is read through its own loopback page;
+# nothing is stored. The address must be loopback (127.0.0.1, localhost or [::1]).
+source = "daybook"
+daybook_url = "http://127.0.0.1:8765"
+# Which Daybook device scope to show. Empty: the scope with the latest recorded day.
+daybook_scope = ""
+
 [agents.claude]
 # Model alias or id passed to `claude -p --model`.
 model = "sonnet"

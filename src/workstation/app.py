@@ -11,6 +11,7 @@ import secrets
 import threading
 import time
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
 from . import inbox as inbox_view
+from . import timesources
 from . import views
 from . import config as configuration
 from .principals import AGENTS, Tokens, can, configure_owner, is_human
@@ -173,6 +175,8 @@ class Workstation:
         self.tokens = Tokens(self.data / "tokens.json")
         self.dispatcher: Dispatcher | None = None
         self.svc = Service(self.store, on_dispatch=lambda d: self.dispatcher and self.dispatcher.submit(d))
+        self.time_source = (timesources.Daybook(self.config.daybook_url, self.config.daybook_scope)
+                            if self.config.time_source == "daybook" else timesources.Off())
         self.svc.max_open_asks = self.config.inbox_max_open_per_agent
         if runners is None:
             runners = default_runners(self.config.claude_model, self.config.gpt_model, self.config.gpt_effort)
@@ -437,6 +441,17 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         if d["idempotency_key"]:
             d["idempotency_key"] = f"{who}:{d['idempotency_key']}"
         return views.task_card(ws.svc, ws.svc.record_review(who, task_id, **d))
+
+    # ---- time: where the owner's time went (read at request time from a local source, never stored) ----
+
+    @app.get("/api/time")
+    def time_panel(end: str | None = None, _: str = Depends(owner)):
+        """The seven days ending on `end` (default today in the display time zone). Owner only: it is the owner's own data."""
+        try:
+            day = date.fromisoformat(end) if end else datetime.now(ZoneInfo(views.DISPLAY_TZ)).date()
+        except ValueError:
+            raise Invalid("end must be a date like 2026-11-08") from None
+        return timesources.window(ws.time_source, day)
 
     # ---- inbox: items agents submit for the owner ------------------------------------------
 

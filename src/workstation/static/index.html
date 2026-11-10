@@ -53,11 +53,15 @@ table{width:100%;border-collapse:collapse;font-size:13.5px} th,td{text-align:lef
 .err{color:var(--bad);font-size:13px}
 .note{font-size:12.5px;color:var(--mute);margin-top:3px}
 .hidden{display:none}
+.bars{display:grid;gap:8px} .bar{display:grid;grid-template-columns:92px 1fr 72px;gap:10px;align-items:center;font-size:13.5px}
+.track{display:flex;height:18px;border-radius:4px;overflow:hidden;background:var(--mid-bg)} .track span{display:block;height:100%}
+.p-Focus{background:var(--acc)} .p-Entertainment{background:var(--ask)} .p-Other{background:var(--mute)} .p-Untagged{background:var(--line)}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mute);margin:8px 0} .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 </style>
 </head>
 <body>
 <div class="top"><h1>Workstation</h1>
-<nav><a href="#/" data-nav="home">Home</a><a href="#/inbox" data-nav="inbox">Inbox <span id="inboxcnt" class="pill"></span></a><a href="#/threads" data-nav="threads">Threads</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/activity" data-nav="activity">Activity</a><a href="#/review" data-nav="review">Review</a></nav></div>
+<nav><a href="#/" data-nav="home">Home</a><a href="#/inbox" data-nav="inbox">Inbox <span id="inboxcnt" class="pill"></span></a><a href="#/threads" data-nav="threads">Threads</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/activity" data-nav="activity">Activity</a><a href="#/time" data-nav="time">Time</a><a href="#/review" data-nav="review">Review</a></nav></div>
 <div class="sub" id="sub">Loading…</div>
 <div id="offline" class="banner hidden" role="status"></div>
 <main id="view"></main>
@@ -322,6 +326,34 @@ async function updateInboxCount() {
   try { const ib = await api("/api/inbox"); const el = $("#inboxcnt"); el.textContent = ib.items.length; el.classList.toggle("ask", ib.items.length > 0); } catch (e) { /* signed out */ }
 }
 
+// ---------- Time ----------
+const PURPOSES = ["Focus", "Entertainment", "Other", "Untagged"];
+const hm = sec => { const m = Math.round(sec / 60); return m < 60 ? m + " min" : Math.floor(m / 60) + " h " + String(m % 60).padStart(2, "0") + " m"; };
+async function renderTime() {
+  const t = await api("/api/time");
+  $("#sub").textContent = "Where your time went, from Daybook on this computer. Read when you open this page; nothing is stored.";
+  if (t.state !== "connected") {
+    const label = t.state === "off" ? "Time tracking is off" : t.state === "unreadable" ? "Daybook could not be read" : "Not connected";
+    $("#view").innerHTML = `<div class="card"><div class="t">${esc(label)}</div><p>${esc(t.message)}</p></div>`;
+    return;
+  }
+  const max = Math.max(1, ...t.days.map(d => d.seconds || 0));
+  const bars = t.days.map(d => d.recorded
+    ? `<div class="bar"><span>${esc(d.date)}</span><div class="track" title="${esc(PURPOSES.map(p => p + " " + hm(d.by_purpose[p])).join(", "))}">${PURPOSES.map(p => d.by_purpose[p] ? `<span class="p-${p}" style="width:${(d.by_purpose[p] / max * 100).toFixed(2)}%"></span>` : "").join("")}</div><span>${esc(hm(d.seconds))}</span></div>`
+    : `<div class="bar"><span>${esc(d.date)}</span><span class="note">not recorded${d.date === t.end ? " yet (Daybook records finished days)" : ""}</span><span></span></div>`).join("");
+  const sum = PURPOSES.filter(p => t.by_purpose[p]).map(p => `${p} ${hm(t.by_purpose[p])}`).join(" · ");
+  $("#view").innerHTML = `${t.message ? `<div class="banner">${esc(t.message)}</div>` : ""}${t.demo ? `<div class="banner">Daybook is showing its fictional demo data.</div>` : ""}
+  <div class="strip">
+    <div class="tile"><span class="k">Latest recorded day</span><span class="big">${t.latest_recorded ? esc(t.latest_recorded) : "none yet"}</span><div class="meta">${t.today && t.today.recorded ? "" : "Today is not recorded yet"}</div></div>
+    <div class="tile"><span class="k">Last 7 days (${t.recorded_days} recorded)</span><span class="big">${esc(hm(t.total_seconds))}</span><div class="meta">${esc(sum)}</div></div>
+    <div class="tile"><span class="k">Source</span><span class="big">Daybook</span><div class="meta">${t.scope ? "scope: " + esc(t.scope) : ""}</div></div>
+  </div>
+  <section><h2>Time per day, ${esc(t.start)} to ${esc(t.end)}</h2>
+  <div class="legend">${PURPOSES.map(p => `<span><i class="p-${p}"></i>${p}</span>`).join("")}<span>Bar length: hours that day, same scale for every day</span></div>
+  <div class="bars">${bars}</div>
+  <p class="note">${t.notes.map(esc).join(" ")}</p></section>`;
+}
+
 // ---------- router, polling, events ----------
 let seq = -1, busy = false, again = false;
 async function route(force) {
@@ -339,6 +371,7 @@ async function route(force) {
     else if (parts[0] === "activity") await renderActivity();
     else if (parts[0] === "review") await renderReview(parts[1]);
     else if (parts[0] === "inbox") await renderInbox();
+    else if (parts[0] === "time") await renderTime();
     $("#offline").classList.add("hidden");
     if (parts[0] !== "inbox") updateInboxCount();
   } catch (e) { if (e.message !== "signed out") { $("#offline").textContent = "Could not load: " + e.message; $("#offline").classList.remove("hidden"); } }
