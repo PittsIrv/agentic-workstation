@@ -25,6 +25,15 @@ REVIEW_VERDICTS = {"approve", "changes_requested", "comment"}
 PRIORITIES = {"P0", "P1", "P2", "P3"}
 TEXT_FIELDS = {"title", "next_action", "blocked_reason", "note", "why"}
 
+# Asks: items an agent submits because it needs the owner. The kinds, urgency levels, length limits and the
+# open-item cap are this project's defaults, not research results; the cap is configurable ([inbox]).
+ASK_KINDS = ("decision", "review", "approval", "question")
+ASK_URGENCY = ("low", "normal", "high")
+ASK_LIMITS = {"title": 200, "text": 2000, "blocked": 300, "cost_of_waiting": 300, "note": 2000}
+DEFAULT_MAX_OPEN_ASKS = 20
+ASK_RESOLUTIONS = {"approval": ("approved", "declined", "dismissed")}
+ASK_RESOLUTIONS_OTHER = ("answered", "dismissed")
+
 
 OPTION_STOP = {"a", "an", "the", "of", "to", "for", "with", "and", "or", "in", "on", "as", "by", "it", "we", "use", "using"}
 OPTION_MERGE_AT = 0.6
@@ -109,6 +118,7 @@ class Service:
     def __init__(self, store: Store, on_dispatch: Callable[[str], None] | None = None):
         self.store = store
         self.on_dispatch = on_dispatch or (lambda _id: None)
+        self.max_open_asks = DEFAULT_MAX_OPEN_ASKS
         self._refused_at: dict[tuple[str, str], datetime] = {}  # in memory: stops a loop, not worth persisting
 
     @property
@@ -333,6 +343,83 @@ class Service:
         self.store.append("task_updated", actor, {"id": task_id, "review": review}, idempotency_key=idempotency_key,
                           project_id=t["project_id"], request_hash=fp)
         return t
+
+    # ---- asks (agent-submitted items for the owner) ----------------------------------------
+    def _ask(self, ask_id: str) -> dict:
+        a = self.s.asks.get(ask_id)
+        if not a:
+            raise NotFound(f"ask {ask_id}")
+        return a
+
+    @atomic
+    def create_ask(self, actor: str, *, title: str, kind: str = "question", text: str = "", blocked: str = "",
+                   cost_of_waiting: str = "", urgency: str = "normal", project_id: str | None = None,
+                   task_id: str | None = None, due_at: str | None = None, due_tz: str | None = None,
+                   url: str | None = None, idempotency_key: str | None = None) -> tuple[dict, str]:
+        """An agent says "this needs you". Returns (ask, outcome) with outcome created | duplicate."""
+        fp = self._fp(op="ask", actor=actor, title=title, kind=kind, text=text, blocked=blocked,
+                      cost_of_waiting=cost_of_waiting, urgency=urgency, project_id=project_id, task_id=task_id,
+                      due_at=due_at, due_tz=due_tz, url=url)
+        if (dup := self._dup(idempotency_key, "ask_created", fp=fp)):
+            return self._ask(dup["payload"]["id"]), "duplicate"
+        if not can(actor, "ask_owner", project_id):
+            raise Forbidden(f"{actor} may not submit items for the owner")
+        for k, v in (("title", title), ("text", text), ("blocked", blocked), ("cost_of_waiting", cost_of_waiting)):
+            if not isinstance(v, str):
+                raise Invalid(f"{k} must be text")
+            if len(v) > ASK_LIMITS[k]:
+                raise Invalid(f"{k} is longer than {ASK_LIMITS[k]} characters")
+        if not title.strip():
+            raise Invalid("title is required")
+        if kind not in ASK_KINDS:
+            raise Invalid(f"kind must be one of {list(ASK_KINDS)}")
+        if urgency not in ASK_URGENCY:
+            raise Invalid(f"urgency must be one of {list(ASK_URGENCY)}")
+        self._need_project(project_id)
+        if task_id and task_id not in self.s.tasks:
+            raise Invalid(f"unknown task {task_id}")
+        url = check_url(url)
+        due_at, due_tz = parse_due(due_at, due_tz)
+        open_now = sum(1 for a in self.s.asks.values() if a["asked_by"] == actor and a["status"] == "open")
+        if open_now >= self.max_open_asks:
+            raise Conflict(f"{actor} already has {open_now} open items for the owner (limit {self.max_open_asks}); "
+                           "wait for answers or withdraw some")
+        aid = new_id("ask")
+        self.store.append("ask_created", actor, {
+            "id": aid, "title": title.strip(), "kind": kind, "text": text, "blocked": blocked,
+            "cost_of_waiting": cost_of_waiting, "urgency": urgency, "project_id": project_id, "task_id": task_id,
+            "due_at": due_at, "due_tz": due_tz, "url": url}, idempotency_key=idempotency_key,
+            project_id=project_id, request_hash=fp)
+        return self.s.asks[aid], "created"
+
+    @atomic
+    def answer_ask(self, actor: str, ask_id: str, *, resolution: str, note: str = "") -> dict:
+        if not is_human(actor):
+            raise Forbidden("only the owner answers items in the inbox")
+        a = self._ask(ask_id)
+        if a["status"] != "open":
+            raise Conflict(f"ask already {a['status']}")
+        allowed = ASK_RESOLUTIONS.get(a["kind"], ASK_RESOLUTIONS_OTHER)
+        if resolution not in allowed:
+            raise Invalid(f"a {a['kind']} is closed with one of {list(allowed)}")
+        if not isinstance(note, str) or len(note) > ASK_LIMITS["note"]:
+            raise Invalid(f"note must be text of at most {ASK_LIMITS['note']} characters")
+        if resolution == "answered" and not note.strip():
+            raise Invalid("an answer needs text")
+        self.store.append("ask_answered", actor, {"id": ask_id, "resolution": resolution, "note": note},
+                          project_id=a.get("project_id"))
+        return a
+
+    @atomic
+    def withdraw_ask(self, actor: str, ask_id: str) -> dict:
+        a = self._ask(ask_id)
+        if actor != a["asked_by"]:
+            raise Forbidden("only the agent that submitted an item can withdraw it")
+        if a["status"] != "open":
+            raise Conflict(f"ask already {a['status']}")
+        self.store.append("ask_withdrawn", actor, {"id": ask_id, "resolution": "withdrawn"},
+                          project_id=a.get("project_id"))
+        return a
 
     # ---- decisions -----------------------------------------------------------------------
     @atomic

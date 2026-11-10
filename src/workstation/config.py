@@ -32,6 +32,7 @@ class Config:
     tickets_path: str = ""
     tickets_title: str = "Tickets"
     tickets_closed: list[str] = field(default_factory=lambda: list(DEFAULT_CLOSED))
+    inbox_max_open_per_agent: int = 20  # open items one agent may have waiting on the owner
     coverage: list[dict] = field(default_factory=lambda: [dict(c) for c in DEFAULT_COVERAGE])
 
 
@@ -53,6 +54,7 @@ def load(data_dir: Path | str) -> Config:
     cfg.tickets_title = str(tk.get("title", cfg.tickets_title))
     if "closed" in tk:
         cfg.tickets_closed = [str(x) for x in tk["closed"]]
+    cfg.inbox_max_open_per_agent = raw.get("inbox", {}).get("max_open_per_agent", cfg.inbox_max_open_per_agent)
     if "coverage" in raw:
         cfg.coverage = [{"source": str(c["source"]), "state": str(c["state"]),
                          **({"agent": str(c["agent"])} if "agent" in c else {})} for c in raw["coverage"]]
@@ -67,5 +69,8 @@ def validate(cfg: Config, path: Path | str = "config") -> None:
         ZoneInfo(cfg.timezone)
     except (ZoneInfoNotFoundError, ValueError) as e:
         raise ValueError(f"{path}: display.timezone {cfg.timezone!r} is not an IANA zone") from e
+    if not (isinstance(cfg.inbox_max_open_per_agent, int) and not isinstance(cfg.inbox_max_open_per_agent, bool)
+            and 1 <= cfg.inbox_max_open_per_agent <= 1000):
+        raise ValueError(f"{path}: inbox.max_open_per_agent must be a whole number from 1 to 1000")
     if cfg.gpt_effort not in ("low", "medium", "high"):
         raise ValueError(f"{path}: agents.gpt.effort must be low, medium or high")

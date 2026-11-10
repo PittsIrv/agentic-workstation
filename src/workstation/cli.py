@@ -52,6 +52,25 @@ def main(argv=None) -> None:
     s = sub.add_parser("backup"); s.add_argument("path", nargs="?")
     s = sub.add_parser("project"); s.add_argument("id"); s.add_argument("name"); s.add_argument("--goal", default="")
     s.add_argument("--stage", default=""); s.add_argument("--milestone", default="")
+    s = sub.add_parser("ask", help="submit an item that needs the owner (an agent command)")
+    s.add_argument("title"); s.add_argument("--as", dest="who", default=None)
+    s.add_argument("--kind", default="question", choices=["decision", "review", "approval", "question"])
+    s.add_argument("--text", default="", help="details; '-' reads stdin")
+    s.add_argument("--blocked", default="", help="what is blocked until the owner answers")
+    s.add_argument("--cost", default="", help="what it costs if this waits")
+    s.add_argument("--urgency", default="normal", choices=["low", "normal", "high"])
+    s.add_argument("--project", default=None); s.add_argument("--task", default=None); s.add_argument("--url", default=None)
+    s.add_argument("--due", default=None, help="ISO 8601 deadline with a UTC offset (2026-11-12T17:00:00-05:00), or without one plus --due-tz"); s.add_argument("--due-tz", default=None)
+    s.add_argument("--key", default=None, help="idempotency key: resubmitting with it returns the same item")
+    s = sub.add_parser("asks", help="items submitted for the owner and their answers")
+    s.add_argument("--as", dest="who", default=None); s.add_argument("--status", default="open", choices=["open", "closed", "all"])
+    s.add_argument("--inbox", action="store_true", help="owner only: the whole inbox, most urgent first")
+    s = sub.add_parser("answer", help="owner: answer an item")
+    s.add_argument("ask_id"); s.add_argument("--as", dest="who", default=None)
+    s.add_argument("--resolution", default="answered", choices=["answered", "approved", "declined", "dismissed"])
+    s.add_argument("--note", default="")
+    s = sub.add_parser("withdraw", help="agent: take back an item it submitted")
+    s.add_argument("ask_id"); s.add_argument("--as", dest="who", default=None)
     for name in ("inbox", "claim", "reply", "task", "post", "event"):
         s = sub.add_parser(name); s.add_argument("--as", dest="who", default=None)
         if name in ("claim", "reply"):
@@ -155,6 +174,20 @@ def main(argv=None) -> None:
         if args.status or args.note:
             changes = {k: v for k, v in {"status": args.status, "note": args.note}.items() if v}
             out(c.patch(f"/api/tasks/{args.task_id}", json={"changes": changes}))
+    elif args.cmd == "ask":
+        body = {"title": args.title, "kind": args.kind, "text": sys.stdin.read() if args.text == "-" else args.text,
+                "blocked": args.blocked, "cost_of_waiting": args.cost, "urgency": args.urgency,
+                "project_id": args.project, "task_id": args.task, "url": args.url, "due_at": args.due,
+                "due_tz": args.due_tz, "idempotency_key": args.key}
+        out(client(args, args.who).post("/api/asks", json=body))
+    elif args.cmd == "asks":
+        c = client(args, args.who)
+        out(c.get("/api/inbox") if args.inbox else c.get("/api/asks", params={"status": args.status}))
+    elif args.cmd == "answer":
+        out(client(args, args.who).post(f"/api/asks/{args.ask_id}/answer",
+                                        json={"resolution": args.resolution, "note": args.note}))
+    elif args.cmd == "withdraw":
+        out(client(args, args.who).post(f"/api/asks/{args.ask_id}/withdraw"))
     elif args.cmd == "post":
         out(client(args, args.who).post(f"/api/threads/{args.thread_id}/messages", json={"text": args.text}))
     elif args.cmd == "event":

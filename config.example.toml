@@ -15,6 +15,10 @@ timezone = "UTC"
 [server]
 port = 8770
 
+[inbox]
+# Open items one agent may have waiting on you. A default chosen by the project, not a researched value.
+max_open_per_agent = 20
+
 [agents.claude]
 # Model alias or id passed to `claude -p --model`.
 model = "sonnet"

@@ -50,6 +50,7 @@ class State:
     messages: dict[str, list[dict]] = field(default_factory=dict)  # thread_id -> ordered posts
     dispatches: dict[str, dict] = field(default_factory=dict)
     projects: dict[str, dict] = field(default_factory=dict)
+    asks: dict[str, dict] = field(default_factory=dict)  # items an agent submitted for the owner
     idempotency: dict[str, str] = field(default_factory=dict)  # key -> event_id
     entity_index: dict[str, str] = field(default_factory=dict)  # "project|entity_key" -> task_id
     events: list[dict] = field(default_factory=list)
@@ -243,6 +244,16 @@ class Store:
             rec = s.decisions[p["id"]]
             rec.update({k: v for k, v in p.items() if k != "id"})
             rec["resolved_by"], rec["resolved_at"] = ev["actor"], ev["recorded_at"]
+            self._touch(rec, ev)
+        elif t == "ask_created":
+            rec = {**p, "status": "open", "created_at": ev["recorded_at"], "asked_by": ev["actor"]}
+            s.asks[p["id"]] = rec
+            self._touch(rec, ev)
+        elif t in ("ask_answered", "ask_withdrawn"):
+            rec = s.asks[p["id"]]
+            rec.update({k: v for k, v in p.items() if k != "id"})
+            rec["status"] = "withdrawn" if t == "ask_withdrawn" else "closed"
+            rec["closed_by"], rec["closed_at"] = ev["actor"], ev["recorded_at"]
             self._touch(rec, ev)
         elif t == "thread_created":
             rec = {**p, "created_at": ev["recorded_at"], "created_by": ev["actor"]}

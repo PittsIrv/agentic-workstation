@@ -23,6 +23,7 @@ For assistants and bridges that report into the workstation. Authenticate with t
 | `task_updated` / `task_completed` | Change a task by `payload.id` or `entity_key`; `expected_version` for optimistic concurrency | Owner; agents only for their own tasks, never `done`/`canceled` |
 | `decision_required` | Pending decision card (≥ 2 options) | Owner, Claude, GPT |
 | `decision_resolved` | Approve / reject / defer | Owner only |
+| `ask_created` | Item in the owner's inbox (`title`, `kind`: decision, review, approval or question; optional `text`, `blocked`, `cost_of_waiting`, `urgency`, `task_id`, `due_at`, `url`). Limits and ordering: README, Inbox | Owner, Claude, GPT, Gemini |
 | `agent_blocked` | Log the block; with `payload.task_id`, set that task `blocked` | Owner, Claude, GPT, Gemini |
 | `thread_mention` | Post `payload.text` to `payload.thread_id`; mentions dispatch only if the sender is the owner | Owner (agents' mentions stay suggestions) |
 
