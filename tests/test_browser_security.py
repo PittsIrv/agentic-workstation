@@ -115,6 +115,7 @@ def site(tmp_path_factory, fake_daybook):
     (data / "config.toml").write_text(
         f"[owner]\nname = {esc(HOSTILE)}\n[tickets]\npath = {esc(str(tickets))}\ntitle = {esc(HOSTILE)}\n"
         f"[[coverage]]\nsource = {esc(HOSTILE)}\nstate = {esc(HOSTILE)}\n"
+        f'[reminders]\nwait_minutes_high = 0\nquiet_start = "00:00"\nquiet_end = "00:00"\n'
         f"[time]\ndaybook_url = {esc(fake_daybook)}\ndaybook_scope = {esc(HOSTILE)}\n")
     reply = (f"{HOSTILE}\n```json\n" + json.dumps({
         "position": HOSTILE, "options": [HOSTILE, "Safe option"], "verdict": "comment",
@@ -180,6 +181,10 @@ def site(tmp_path_factory, fake_daybook):
             "title": HOSTILE[:200], "kind": kind, "text": HOSTILE, "blocked": HOSTILE[:300],
             "cost_of_waiting": HOSTILE[:300], "urgency": "high", "project_id": "general",
             "url": BAD_URL}).raise_for_status()
+    # reminders: every due item is reminded (hostile titles go into the log), then one is snoozed
+    http.post("/api/reminders/run", json={"channel": "print"}).raise_for_status()
+    snoozed = http.get("/api/needs-now").json()["items"][-1]["key"]
+    http.post("/api/snooze", json={"key": snoozed, "minutes": 60}).raise_for_status()
     answered = http.post("/api/asks", headers={"Authorization": f"Bearer {agent_tokens['claude']}"},
                          json={"title": HOSTILE[:200], "kind": "question"}).json()["ask"]
     http.post(f"/api/asks/{answered['id']}/answer", json={"resolution": "answered", "note": HOSTILE}).raise_for_status()

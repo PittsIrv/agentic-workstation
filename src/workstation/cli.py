@@ -37,6 +37,51 @@ def out(r: httpx.Response):
     print(json.dumps(r.json(), indent=1, ensure_ascii=False))
 
 
+def clean(text: str, limit: int = 200) -> str:
+    """Agent text for a terminal or a notification: control characters (including escape sequences) removed."""
+    return "".join(c if c.isprintable() else " " for c in str(text))[:limit].strip()
+
+
+def notify(title: str, body: str) -> str:
+    """Ask the system for a notification with no shell and no text spliced into a script. Returns "" when it was
+    requested, else why not. The system may still hide it (macOS: Script Editor needs notifications allowed)."""
+    import shutil
+    import subprocess
+    try:
+        if sys.platform == "darwin" and shutil.which("osascript"):
+            cmd = ["osascript", "-e", "on run argv", "-e", "display notification (item 1 of argv) with title (item 2 of argv)",
+                   "-e", "end run", body, title]
+        elif shutil.which("notify-send"):
+            cmd = ["notify-send", "--", title, body]
+        else:
+            return "no notification tool found (macOS: osascript; Linux: notify-send)"
+        subprocess.run(cmd, check=True, timeout=10, capture_output=True)
+        return ""
+    except (subprocess.SubprocessError, OSError) as e:
+        return f"notification failed: {clean(e)}"
+
+
+def remind(args) -> None:
+    c = client(args, args.who)
+    r = c.post("/api/reminders/run", json={"channel": "notification" if args.notify else "print", "dry_run": args.dry_run})
+    if r.status_code >= 400:
+        sys.exit(f"{r.status_code}: {r.text}")
+    res = r.json()
+    if not res["due"]:
+        why = {"paused": "reminders are paused", "quiet_hours": "quiet hours", "daily_cap": "the daily cap is used up"}.get(res["held"])
+        print(f"nothing to remind ({why})" if why else "nothing to remind")
+        return
+    print(("would remind" if args.dry_run else "reminding") + f" ({res['sent_today']} of {res['daily_cap']} today):")
+    for e in res["due"]:
+        print(f"- [{clean(e['urgency'])}] {clean(e['title'])} — {clean(e['why'])}")
+    if args.notify and not args.dry_run:
+        n = len(res["due"])
+        problem = notify("Workstation", f"{n} thing{'s' if n != 1 else ''} need{'' if n != 1 else 's'} you: {clean(res['due'][0]['title'], 80)}"
+                                        + (f" (+{n - 1} more)" if n > 1 else ""))
+        if problem:
+            print(f"note: {problem}; printed above instead")
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="ws")
     ap.add_argument("--data", help="data directory (default ./data or $WS_DATA)")
@@ -71,6 +116,18 @@ def main(argv=None) -> None:
     s.add_argument("ask_id"); s.add_argument("--as", dest="who", default=None)
     s.add_argument("--resolution", default="answered", choices=["answered", "approved", "declined", "dismissed"])
     s.add_argument("--note", default="")
+    s = sub.add_parser("now", help="what needs the owner now, with why (an agent sees only its own items and whether the owner is already loaded)")
+    s.add_argument("--as", dest="who", default=None); s.add_argument("--full", action="store_true", help="owner only: include the full cards")
+    s = sub.add_parser("remind", help="owner: print (and with --notify raise a local notification for) reminders that are due, and record them")
+    s.add_argument("--as", dest="who", default=None)
+    s.add_argument("--dry-run", action="store_true", help="show what would be reminded; record nothing")
+    s.add_argument("--notify", action="store_true", help="also ask the system for a notification (macOS osascript, Linux notify-send); printing always happens")
+    s = sub.add_parser("snooze", help="owner: hide an item from needs-now and reminders for a while")
+    s.add_argument("key", help="item key from `ws now`, e.g. ask:ask_2611...."); s.add_argument("--minutes", type=int, default=240)
+    s.add_argument("--as", dest="who", default=None)
+    s = sub.add_parser("pause", help="owner: pause all reminders"); s.add_argument("--minutes", type=int, default=None, help="default: until `ws resume`")
+    s.add_argument("--as", dest="who", default=None)
+    s = sub.add_parser("resume", help="owner: resume reminders"); s.add_argument("--as", dest="who", default=None)
     s = sub.add_parser("withdraw", help="agent: take back an item it submitted")
     s.add_argument("ask_id"); s.add_argument("--as", dest="who", default=None)
     for name in ("inbox", "claim", "reply", "task", "post", "event"):
@@ -189,6 +246,16 @@ def main(argv=None) -> None:
                                         json={"resolution": args.resolution, "note": args.note}))
     elif args.cmd == "withdraw":
         out(client(args, args.who).post(f"/api/asks/{args.ask_id}/withdraw"))
+    elif args.cmd == "now":
+        out(client(args, args.who).get("/api/needs-now", params={"full": "true"} if args.full else None))
+    elif args.cmd == "remind":
+        remind(args)
+    elif args.cmd == "snooze":
+        out(client(args, args.who).post("/api/snooze", json={"key": args.key, "minutes": args.minutes}))
+    elif args.cmd == "pause":
+        out(client(args, args.who).post("/api/reminders/pause", json={"minutes": args.minutes}))
+    elif args.cmd == "resume":
+        out(client(args, args.who).post("/api/reminders/resume"))
     elif args.cmd == "post":
         out(client(args, args.who).post(f"/api/threads/{args.thread_id}/messages", json={"text": args.text}))
     elif args.cmd == "event":

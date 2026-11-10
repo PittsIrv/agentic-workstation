@@ -51,6 +51,9 @@ class State:
     dispatches: dict[str, dict] = field(default_factory=dict)
     projects: dict[str, dict] = field(default_factory=dict)
     asks: dict[str, dict] = field(default_factory=dict)  # items an agent submitted for the owner
+    snoozes: dict[str, str] = field(default_factory=dict)  # item key -> snoozed until (ISO), set by the owner
+    pause: dict | None = None  # {"until": ISO | None, "at": ISO}; None means reminders are on
+    reminders: list[dict] = field(default_factory=list)  # every reminder recorded, oldest first
     idempotency: dict[str, str] = field(default_factory=dict)  # key -> event_id
     entity_index: dict[str, str] = field(default_factory=dict)  # "project|entity_key" -> task_id
     events: list[dict] = field(default_factory=list)
@@ -255,6 +258,16 @@ class Store:
             rec["status"] = "withdrawn" if t == "ask_withdrawn" else "closed"
             rec["closed_by"], rec["closed_at"] = ev["actor"], ev["recorded_at"]
             self._touch(rec, ev)
+        elif t == "item_snoozed":
+            s.snoozes[p["key"]] = p["until"]
+        elif t == "item_unsnoozed":
+            s.snoozes.pop(p["key"], None)
+        elif t == "reminders_paused":
+            s.pause = {"until": p.get("until"), "at": ev["recorded_at"]}
+        elif t == "reminders_resumed":
+            s.pause = None
+        elif t == "reminder_sent":
+            s.reminders.append({**p, "at": p.get("at") or ev["recorded_at"], "event_id": ev["event_id"]})
         elif t == "thread_created":
             rec = {**p, "created_at": ev["recorded_at"], "created_by": ev["actor"]}
             s.threads[p["id"]] = rec

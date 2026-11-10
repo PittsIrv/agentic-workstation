@@ -36,11 +36,19 @@ Limits **(default)**: title 200 characters, details 2000, blocked and cost 300; 
 
 ## 3. Reminders: what needs you now
 
-**Exists:** nothing; the inbox ordering in part 1 is the input.
+**Status (slice 3, built):** `src/workstation/reminders.py`, `GET /api/needs-now`, `ws now`, `ws remind`, snooze and pause (events `item_snoozed`, `reminders_paused`, `reminders_resumed`, `reminder_sent` in the log), a settings table under Set up, the reminder log on Activity, a banner.
 
-**Rule (proposal), the simplest one unlikely to annoy:** surface an item when (a) it is high urgency, overdue, or has waited longer than a configurable time, and (b) the person is not in focused work (from part 2), and (c) it is outside quiet hours, and (d) today's reminder count is under a daily cap. Otherwise stay silent; the Inbox badge still shows the count. Every number is configurable with a named default **(default, to be set in slice 3)**: minutes waited, quiet hours, daily cap, what counts as focus. One reminder per item per day at most. A muted or ignored reminder is the failure to avoid, so fewer, later reminders beat more.
+**What needs you now:** one function over the inbox. An item is *due* if overdue, or its deadline is within `deadline_window_minutes` **(default 24 h)**, or it has waited at least the minutes for its urgency **(default 30 high, 240 normal, 1440 low)**. Snoozed items are left out until the snooze ends. Each item carries `reasons` (overdue, due_soon, waited, and `blocks` with the agent's words, labelled) and a `why` sentence. Home, the API, `ws now` and `ws remind` use this one list.
 
-**Surface:** `GET /api/needs-now` and `ws needs-now` (so a planning agent can ask), plus a local notification path **(proposal)** through the macOS notification centre on Macs and nothing elsewhere, off unless enabled. No model-based planner.
+**Reminder rule (conservative):** due, and not paused, and outside quiet hours **(default 21:00 to 08:00 local, may cross midnight)**, and under the daily cap **(default 3 per local day)**, and not reminded within `repeat_minutes` **(default 1440)**, never once answered or snoozed. Highest-ranked first, up to the remaining cap. Time zone is the display zone the review page uses. Because the program cannot see the owner's current activity, the rule leans quiet: fewer, later reminders. Prior-work check: timing interruptions well is an open problem and assistants over-interrupt, so there is no learned timing and no scoring.
+
+**Delivery:** (a) in the page: a banner while something needs the owner (hidden in quiet hours and while paused; it records nothing and does not use the cap, since the owner is looking); (b) `ws remind` for a schedule: prints due reminders and records them (the cap and repeat interval apply to what it records); `--notify` also asks the system for a notification with the text passed as arguments, never inside a script. A system notification may need a permission the user grants themselves (macOS: notifications for Script Editor); the log records that a notification was requested, not that it was shown. The server sends nothing off the machine and makes no agent call.
+
+**For agents:** `GET /api/needs-now` / `ws now --as <agent>` returns only that agent's items with a state (waiting, due, snoozed, answered, withdrawn), counts of the owner's due and waiting items, `advice` (hold or clear), and whether reminders are paused or in quiet hours. No other agent's titles and no time data. Snooze, pause, run, settings and the log are owner only.
+
+**Reminder log:** each recorded reminder with what happened to its item: answered within `acted_window_minutes` **(default 120)**, answered later, snoozed, or no action yet. No model, no score.
+
+**Not done:** using Daybook's yesterday pattern for timing (optional, the owner's call); a learned or per-item snooze suggestion; reminders for items an agent expires; edit settings in the page (they are in the config file).
 
 ## 4. For other people
 
@@ -90,5 +98,5 @@ The database, tokens, config, screen-time data, local paths, bills, names. All l
 
 1. **Inbox** (this slice): asks, one ordered list, answer in place, agent instructions.
 2. **Time panel**: `TimeSource` interface, Daybook reader, "not connected" state, today and this week.
-3. **Reminders**: `needs-now` computation from 1 and 2, quiet hours and daily cap, notification path, instructions updated.
+3. **Reminders** (built): `needs-now`, quiet hours, daily cap, snooze and pause, `ws remind`, instructions updated.
 4. Later: asks in the weekly review; extra agent ids; billing or cost source behind the same interface style.

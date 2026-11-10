@@ -52,7 +52,7 @@ table{width:100%;border-collapse:collapse;font-size:13.5px} th,td{text-align:lef
 .banner{background:var(--ask-bg);color:var(--ask-fg);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:14px}
 .err{color:var(--bad);font-size:13px}
 .note{font-size:12.5px;color:var(--mute);margin-top:3px}
-.hidden{display:none}
+.hidden{display:none} .snz{margin:-6px 0 12px 4px} .snz button{padding:1px 8px;font-size:12px} .why{margin:-6px 0 6px 4px;color:var(--ask-fg)}
 .two{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:start} @media(max-width:860px){.two{grid-template-columns:1fr}}
 .wait{margin:2px 0 0} .more{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:13.5px}
 .steps{margin:0;padding-left:20px} .steps>li{margin-bottom:14px} .steps h3{font:500 15px/1.3 var(--font);margin:0 0 4px}
@@ -71,6 +71,7 @@ pre.cmd{font:12.5px/1.45 var(--mono);background:var(--bg);border:1px solid var(-
 <nav><a href="#/" data-nav="home">Home</a><a href="#/inbox" data-nav="inbox">Inbox <span id="inboxcnt" class="pill"></span></a><a href="#/decisions" data-nav="decisions">Decisions</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/threads" data-nav="threads">Threads</a><a href="#/review" data-nav="review">Review</a><a href="#/time" data-nav="time">Time</a><a href="#/activity" data-nav="activity">Activity</a><a href="#/setup" data-nav="setup">Set up</a></nav></div>
 <div class="sub" id="sub">Loading…</div>
 <div id="offline" class="banner hidden" role="status"></div>
+<div id="nowbar" class="banner hidden" role="status"></div>
 <main id="view"></main>
 <script>
 "use strict";
@@ -156,7 +157,7 @@ function agentsSection(h) {
   }).join("");
 }
 async function renderHome() {
-  const [h, ib] = await Promise.all([api("/api/home"), api("/api/inbox")]);
+  const [h, nn] = await Promise.all([api("/api/home"), api("/api/needs-now?full=true")]);
   $("#sub").textContent = `${new Date(h.now).toLocaleString([], {weekday: "long", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"})} · ${h.tz}`;
   const mine = h.actions.filter(t => t.status !== "needs_review" && t.status !== "blocked");
   let groups = "";
@@ -167,8 +168,10 @@ async function renderHome() {
   const setup = h.first_item ? "" : await api("/api/setup");
   $("#view").innerHTML = `
   ${h.first_item ? "" : `<section><h2>Get started <span class="cnt">connect your first agent</span></h2>${setupPanel(setup)}</section>`}
-  <section><div class="more"><h2 style="margin:0">Needs you now <span class="cnt">${ib.items.length} waiting</span></h2>${ib.items.length > CUT ? `<a href="#/inbox">All ${ib.items.length} in the Inbox</a>` : ""}</div>
-  ${ib.items.slice(0, CUT).map(inboxRow).join("") || `<div class="card"><span class="empty">Nothing is waiting on you. When an agent needs a decision, a review or an approval, it shows up here and you answer it in place. ${h.first_item ? "" : "Finish the steps above to connect one."}</span></div>`}</section>
+  <section><div class="more"><h2 style="margin:0">Needs you now <span class="cnt">${nn.items.length} due</span></h2><a href="#/inbox">Inbox</a></div>
+  ${remindersLine(nn)}
+  ${nn.items.slice(0, CUT).map(inboxRow).join("") || `<div class="card"><span class="empty">Nothing needs you right now. ${nn.waiting_not_due ? nn.waiting_not_due + " item(s) are waiting but not due yet. " : ""}${nn.snoozed.length ? nn.snoozed.length + " snoozed. " : ""}When an agent needs a decision, a review or an approval, it shows up in the <a href="#/inbox">Inbox</a> and here once it is due. ${h.first_item ? "" : "Finish the steps above to connect one."}</span></div>`}
+  ${nn.items.length > CUT ? `<a href="#/inbox">${nn.items.length - CUT} more due in the Inbox</a>` : ""}</section>
   <div class="two">
     <section id="home-time"><h2>Your time</h2><div class="card"><span class="empty">Loading…</span></div></section>
     <section><h2>Your agents</h2><div class="card"><div class="agents">${agentsSection(h)}</div></div>
@@ -312,8 +315,42 @@ async function renderTasks() {
 async function renderActivity() {
   const ev = await api("/api/activity?limit=300");
   $("#sub").textContent = "Every recorded event, newest first. This is the audit trail.";
-  $("#view").innerHTML = `<div class="tablewrap"><table><tr><th>#</th><th>When</th><th>Who</th><th>Event</th><th>Summary</th><th>Source</th></tr>
+  const rlog = await reminderLog();
+  $("#view").innerHTML = rlog + `<h2>Every event</h2><div class="tablewrap"><table><tr><th>#</th><th>When</th><th>Who</th><th>Event</th><th>Summary</th><th>Source</th></tr>
   ${ev.map(e => `<tr><td>${e.seq}</td><td>${esc(fmt(e.at))}</td><td>${who(e.actor)}</td><td>${esc(e.type.replace(/_/g, " "))}</td><td>${esc(e.summary)}</td><td>${esc(e.source_system)}${e.provenance?.confidence ? " · " + esc(e.provenance.confidence) : ""}</td></tr>`).join("")}</table></div>`;
+}
+
+// ---------- Reminders ----------
+const PAUSES = [[60, "1 h"], [480, "8 h"], ["", "until I resume"]];
+function pauseButtons() { return PAUSES.map(([m, l]) => `<button data-pause="${m}">${l}</button>`).join(" "); }
+function remindersLine(nn) {
+  const r = nn.reminders;
+  if (r.paused) return `<div class="note" style="margin:0 0 8px">Reminders are paused${r.paused.until ? " until " + esc(fmt(r.paused.until)) : " until you resume"}. <button data-resume="1">Resume</button></div>`;
+  const state = r.held === "quiet_hours" ? `quiet hours (${esc(r.quiet_hours)}): no reminders now` : r.held === "daily_cap" ? `today's cap of ${r.daily_cap} is used up` : `reminders on, ${r.sent_today} of ${r.daily_cap} sent today`;
+  return `<div class="note" style="margin:0 0 8px">${state}. Pause reminders: ${pauseButtons()} · <a href="#/setup">settings</a></div>`;
+}
+async function updateNowBar() {
+  const bar = $("#nowbar");
+  try {
+    const nn = await api("/api/needs-now"); const r = nn.reminders;
+    if (r.paused) bar.innerHTML = `Reminders are paused${r.paused.until ? " until " + esc(fmt(r.paused.until)) : ""}. <button data-resume="1">Resume</button>`;
+    else if (nn.items.length && !r.quiet_now) bar.innerHTML = `<b>${nn.items.length} item${nn.items.length === 1 ? "" : "s"} need${nn.items.length === 1 ? "s" : ""} you now.</b> <a href="#/">See why on Home</a>`;
+    else { bar.classList.add("hidden"); return; }
+    bar.classList.remove("hidden");
+  } catch (e) { bar.classList.add("hidden"); }
+}
+async function reminderLog() {
+  const l = await api("/api/reminders/log"), c = l.counts;
+  const rows = l.rows.map(r => `<tr><td>${esc(fmt(r.at))}</td><td><a href="${esc(r.link)}">${esc(r.title)}</a></td><td>${esc(r.urgency)}</td><td>${esc(r.why)}</td><td>${esc(r.channel)}</td><td>${esc({acted_in_window: "acted on within the window", acted_later: "acted on later", snoozed: "snoozed", not_yet: "no action yet", item_gone: "item no longer exists"}[r.outcome])}${r.after_s != null ? " (" + esc(waited(r.after_s)) + " later)" : ""}</td></tr>`).join("");
+  return `<section><h2>Reminder log <span class="cnt">${l.total}</span></h2><p class="note">A reminder counts as acted on if the item was answered within ${l.window_minutes} minutes. Facts only, no score: ${c.in_window} acted on within the window, ${c.later} later, ${c.snoozed} snoozed, ${c.waiting} with no action yet.</p>
+  ${rows ? `<div class="tablewrap"><table><tr><th>When</th><th>Item</th><th>Urgency</th><th>Why it was due</th><th>Delivered by</th><th>What happened</th></tr>${rows}</table></div>` : '<p class="empty">No reminders yet. They are recorded when you run <code>ws remind</code>.</p>'}</section>`;
+}
+async function reminderSettings() {
+  const r = await api("/api/reminders/settings");
+  const rows = r.settings.map(x => `<tr><td>${esc(x.label)}</td><td><b>${esc(x.value)}</b></td><td>${esc(x.default)}</td><td>${x.changed ? "changed in config" : "default"}</td></tr>`).join("");
+  return `<section><h2>Reminders</h2><div class="card"><div class="note" style="margin:0 0 8px">${esc(r.limits)} Times are in ${esc(r.tz)}.</div>
+  <div>${r.paused ? `Paused${r.paused.until ? " until " + esc(fmt(r.paused.until)) : " until you resume"}. <button data-resume="1">Resume</button>` : `Reminders are on. Pause them: ${pauseButtons()}`}</div>
+  <div class="tablewrap"><table><tr><th>Setting</th><th>Now</th><th>Default</th><th></th></tr>${rows}</table></div><div class="note">${esc(r.note)}</div></div></section>`;
 }
 
 // ---------- Inbox ----------
@@ -331,7 +368,15 @@ function askRow(e) {
   <div class="meta wait"><span>${who(e.asked_by)} · ${esc(e.project || "no project")}</span><span>waiting ${esc(waited(e.waiting_s))}</span>${e.due_at ? `<span>due ${esc(fmt(e.due_at))}</span>` : ""}${ref}</div>
   ${lines}${body}${actions}<div class="err"></div></div>`;
 }
+const SNOOZES = [[60, "1 h"], [240, "4 h"], [1440, "1 day"]];
+function snoozeBar(e) {
+  if (e.snoozed_until) return `<div class="note snz">Snoozed until ${esc(fmt(e.snoozed_until))}. No reminders for it until then. <button data-unsnooze="${esc(e.key)}">Unsnooze</button></div>`;
+  return `<div class="note snz">Snooze: ${SNOOZES.map(([m, l]) => `<button data-snooze="${esc(e.key)}" data-min="${m}">${l}</button>`).join(" ")}</div>`;
+}
 function inboxRow(e) {
+  return `<div class="ibw">${inboxCard(e)}${e.why ? `<div class="note why"><b>Why now:</b> ${esc(e.why)}</div>` : ""}${snoozeBar(e)}</div>`;
+}
+function inboxCard(e) {
   const head = `<div class="meta wait"><span>${who(e.asked_by)} · ${esc(e.project || "no project")}</span><span>waiting ${esc(waited(e.waiting_s))}</span>${e.overdue ? pill("overdue", "bad") : ""}${e.urgency === "high" ? pill("high", "ask") : ""}</div>`;
   if (e.source === "decision") return decisionCard(e.decision, true, head);
   if (e.source === "task") return taskCard(e.task, head);
@@ -347,6 +392,7 @@ async function renderInbox() {
   ${done ? `<section><h2>Recently answered</h2><div class="tablewrap"><table><tr><th>From</th><th>Item</th><th>Outcome</th><th>When</th></tr>${done}</table></div></section>` : ""}`;
 }
 async function updateInboxCount() {
+  updateNowBar();
   try { const ib = await api("/api/inbox"); const el = $("#inboxcnt"); el.textContent = ib.items.length; el.classList.toggle("ask", ib.items.length > 0); } catch (e) { /* signed out */ }
 }
 
@@ -404,6 +450,7 @@ async function renderSetup() {
   const s = await api("/api/setup"); SNIP.test = s.test_command;
   $("#sub").textContent = "Connect Codex or Claude Code so they can ask you for things.";
   $("#view").innerHTML = `<section><h2>Connect an agent</h2>${setupPanel(s)}</section>
+  ${await reminderSettings()}
   <section><h2>What this dashboard can see</h2><div class="card"><ul class="cov">${s.coverage.map(c => `<li>${esc(c.source)}: <b>${esc(c.state)}</b></li>`).join("")}</ul></div></section>`;
 }
 
@@ -428,12 +475,14 @@ async function route(force) {
     else if (parts[0] === "inbox") await renderInbox();
     else if (parts[0] === "time") await renderTime();
     $("#offline").classList.add("hidden");
-    if (parts[0] !== "inbox") updateInboxCount();
+    if (parts[0] !== "inbox") updateInboxCount(); else updateNowBar();
   } catch (e) { if (e.message !== "signed out") { $("#offline").textContent = "Could not load: " + e.message; $("#offline").classList.remove("hidden"); } }
   finally { busy = false; }
   if (again) { again = false; await route(); }  // the hash changed while rendering
 }
+let tick = 0;
 async function poll() {
+  if (++tick % 30 === 0) updateNowBar();  // the clock moves without events: quiet hours, snoozes ending
   try {
     const v = await api("/api/version");
     $("#offline").classList.add("hidden");
@@ -472,6 +521,10 @@ document.addEventListener("click", async ev => {
       b.disabled = true;
       const card = b.closest(".ib"); try { await api(`/api/asks/${encodeURIComponent(b.dataset.ans)}/answer`, {method: "POST", body: {resolution: b.dataset.res, note: card.querySelector(".anote").value.trim()}}); }
       catch (e) { card.querySelector(".err").textContent = e.message; b.disabled = false; return; } }
+    else if (b.dataset.snooze) { b.disabled = true; await api("/api/snooze", {method: "POST", body: {key: b.dataset.snooze, minutes: +b.dataset.min}}); }
+    else if (b.dataset.unsnooze) { b.disabled = true; await api("/api/unsnooze", {method: "POST", body: {key: b.dataset.unsnooze}}); }
+    else if ("pause" in b.dataset) { b.disabled = true; await api("/api/reminders/pause", {method: "POST", body: {minutes: b.dataset.pause === "" ? null : +b.dataset.pause}}); }
+    else if (b.dataset.resume) { b.disabled = true; await api("/api/reminders/resume", {method: "POST"}); }
     else if (b.dataset.task) { b.disabled = true; await api(`/api/tasks/${b.dataset.task}`, {method: "PATCH", body: {expected_version: +b.dataset.v, changes: {status: b.dataset.status}}}); }
     else if (b.dataset.approve || b.dataset.resolve) {
       if (!b.dataset.armed) { b.dataset.armed = "1"; b.dataset.text = b.textContent; b.textContent = b.dataset.approve ? `Confirm: approve “${b.dataset.label}”` : `Confirm ${b.dataset.s === "deferred" ? "defer" : "reject"}`;
