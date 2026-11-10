@@ -37,6 +37,11 @@ SETTING_LABELS = {
 }
 
 
+def enabled(cfg: dict) -> bool:
+    """The built-in reminder rule is an optional local fallback. Direct callers that pass no switch get it on."""
+    return bool(cfg.get("enabled", True))
+
+
 def _dt(iso: str) -> datetime:
     return datetime.fromisoformat(iso)
 
@@ -115,7 +120,9 @@ def needs_now(svc, cfg: dict, tz_name: str, now: datetime | None = None, full: b
         sent_today += at.astimezone(tz).date() == today
     cap = cfg["daily_cap"]
     paused, quiet = _pause_state(svc, now), in_quiet(now, tz, cfg["quiet_start"], cfg["quiet_end"])
-    held = "paused" if paused else "quiet_hours" if quiet else "daily_cap" if sent_today >= cap else None
+    on = enabled(cfg)
+    held = ("off" if not on else "paused" if paused else "quiet_hours" if quiet else
+            "daily_cap" if sent_today >= cap else None)
     fresh = [e for e in items if e["key"] not in last
              or (now - last[e["key"]]).total_seconds() >= cfg["repeat_minutes"] * 60]
     for e in items:
@@ -123,7 +130,7 @@ def needs_now(svc, cfg: dict, tz_name: str, now: datetime | None = None, full: b
     reminder_due = [] if held else [e["key"] for e in fresh[:max(0, cap - sent_today)]]
     return {"now": now.isoformat(timespec="seconds"), "tz": tz_name, "items": items, "snoozed": snoozed,
             "waiting_not_due": waiting,
-            "reminders": {"paused": paused, "quiet_now": quiet, "quiet_hours": f"{cfg['quiet_start']} to {cfg['quiet_end']}",
+            "reminders": {"enabled": on, "paused": paused, "quiet_now": quiet, "quiet_hours": f"{cfg['quiet_start']} to {cfg['quiet_end']}",
                           "sent_today": sent_today, "daily_cap": cap, "held": held, "due": reminder_due}}
 
 
@@ -152,7 +159,7 @@ def agent_view(svc, who: str, cfg: dict, tz_name: str, now: datetime | None = No
     rm = full["reminders"]
     return {"now": full["now"], "for": who, "owner_items_due": len(full["items"]),
             "owner_items_waiting": len(full["items"]) + full["waiting_not_due"] + len(full["snoozed"]),
-            "reminders_paused": bool(rm["paused"]), "quiet_hours_now": rm["quiet_now"],
+            "reminders_enabled": rm["enabled"], "reminders_paused": bool(rm["paused"]), "quiet_hours_now": rm["quiet_now"],
             "advice": ("hold: the owner already has items due; add yours only if it cannot wait"
                        if full["items"] else "clear: nothing is due on the owner"),
             "mine": mine}
@@ -207,6 +214,8 @@ def run(svc, actor: str, cfg: dict, tz_name: str, channel: str = "print", dry_ru
     """Decide which due items to remind about right now and, unless dry_run, record that they were reminded.
     The caller delivers them (print or a local notification). Nothing leaves this process."""
     _owner(actor, "runs reminders")
+    if not enabled(cfg):
+        raise Conflict("built-in reminders are off; set enabled = true under [reminders] in config.toml and restart `ws serve`")
     if channel not in CHANNELS:
         raise Invalid(f"channel must be one of {list(CHANNELS)}")
     now = now or datetime.now(timezone.utc)
@@ -229,7 +238,7 @@ def run(svc, actor: str, cfg: dict, tz_name: str, channel: str = "print", dry_ru
 def settings(cfg: dict, changed: list[str], tz_name: str, svc, now: datetime | None = None) -> dict:
     from .config import REMINDER_DEFAULTS
     now = now or datetime.now(timezone.utc)
-    return {"tz": tz_name, "paused": _pause_state(svc, now),
+    return {"tz": tz_name, "enabled": enabled(cfg), "paused": _pause_state(svc, now),
             "settings": [{"key": k, "label": SETTING_LABELS[k], "value": cfg[k], "default": REMINDER_DEFAULTS[k],
                           "changed": k in changed} for k in REMINDER_DEFAULTS],
             "note": "Every default is this project's own placeholder, not a researched number. Change them in "

@@ -15,7 +15,6 @@ from .views import OPEN
 
 STALE_DAYS = 7
 WINDOW_DAYS = 7
-REVIEWED_AGENTS = ("claude", "gpt", "gemini")
 
 
 def _t(s: str) -> datetime:
@@ -88,7 +87,7 @@ def build(svc, tz_name: str, end: date | None = None, now: datetime | None = Non
         if in_window(e["recorded_at"]):
             events.append(e)
     agents = []
-    for a in REVIEWED_AGENTS:
+    for a in [p for p, c in AGENTS.items() if c["kind"] == "agent"]:
         agents.append({"id": a, "display": name(a),
                        "replies": sum(e["event_type"] == "message_posted" and e["actor"] == a for e in events),
                        "tasks_done": sum(r["owner"] == a for r in accepted),

@@ -7,6 +7,7 @@ writes must carry `X-Workstation: 1` and a same-origin `Origin`, so other sites 
 from __future__ import annotations
 
 import fcntl
+import re
 import secrets
 import shlex
 import threading
@@ -26,11 +27,12 @@ from . import reminders
 from . import timesources
 from . import views
 from . import config as configuration
-from .principals import AGENTS, Tokens, can, configure_owner, is_human, write_token_file
+from . import principals as agent_registry
+from .principals import AGENTS, InvalidAgent, Tokens, can, configure_owner, is_human, write_token_file
 from . import review as weekly
 from .export import decision_record
 from .principals import owner as owner_id
-from .runners import Dispatcher, Runner, build_prompt, default_runners, parse_reply
+from .runners import Dispatcher, PullOnly, Runner, build_prompt, default_runners, parse_reply
 from .service import Conflict, Forbidden, Invalid, NotFound, Service
 from .store import Store
 from .tickets import TicketFile
@@ -103,6 +105,24 @@ class PauseIn(BaseModel):
 class RunIn(BaseModel):
     channel: str = "print"
     dry_run: bool = False
+
+
+def agent_instructions(data_dir: Path, agent_id: str) -> str | None:
+    """The copy-ready instructions for an added agent, with this install's folders and the agent's name filled in."""
+    root = Path(__file__).resolve().parents[2]
+    f = root / "docs" / "agent-instructions" / "AGENT.snippet.md"
+    if not f.exists():
+        return None
+    fill = {"WORKSTATION_DIR/data": shlex.quote(str(Path(data_dir).resolve())),
+            "WORKSTATION_DIR": shlex.quote(str(root)), "AGENT_ID": agent_id}
+    # one pass, so a folder name that happens to contain a placeholder is never rewritten
+    return re.sub("WORKSTATION_DIR/data|WORKSTATION_DIR|AGENT_ID", lambda m: fill[m.group(0)], f.read_text())
+
+
+class AgentIn(BaseModel):
+    id: str
+    display: str | None = None
+    role: str | None = None
 
 
 class ResolveIn(BaseModel):
@@ -193,6 +213,8 @@ class Workstation:
             raise RuntimeError(f"another workstation server is using {self.data}") from None
         self.store = Store(self.data / "workstation.db")
         self.tokens = Tokens(self.data / "tokens.json")
+        self._agents_mtime = None
+        self.sync_agents()
         self.dispatcher: Dispatcher | None = None
         self.svc = Service(self.store, on_dispatch=lambda d: self.dispatcher and self.dispatcher.submit(d))
         self.time_source = (timesources.Daybook(self.config.daybook_url, self.config.daybook_scope)
@@ -201,6 +223,8 @@ class Workstation:
         if runners is None:
             runners = default_runners(self.config.claude_model, self.config.gpt_model, self.config.gpt_effort)
         self.dispatcher = Dispatcher(self.svc, runners)
+        self._agents_mtime = None
+        self.sync_agents()
         self.login_codes: dict[str, float] = {}
         self.owner_file = self.data / "secrets" / f"{owner_id()}.token"
         if not self.owner_file.exists():
@@ -208,6 +232,20 @@ class Workstation:
             self.owner_file.write_text(self.tokens.issue(owner_id()))
             self.owner_file.chmod(0o600)
 
+
+    def sync_agents(self) -> None:
+        """Install owner-added agents from `<data>/agents.json` (also when the CLI added one while the server runs);
+        each gets a runner that never runs it, so its mentions wait for the agent to pick them up."""
+        m = agent_registry.custom_mtime(self.data)
+        if m == self._agents_mtime:
+            return
+        agent_registry.load_custom(self.data)
+        self._agents_mtime = m
+        runners = getattr(getattr(self, "dispatcher", None), "runners", None)
+        if runners is not None:
+            for pid, a in list(AGENTS.items()):
+                if a.get("custom"):
+                    runners.setdefault(pid, PullOnly())
 
     def close(self) -> None:
         """Release the data directory (tests restart a server on the same data)."""
@@ -272,10 +310,11 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     async def _n(_, e): return JSONResponse({"error": str(e)}, 404)
 
     def principal(request: Request) -> str:
+        ws.sync_agents()
         auth = request.headers.get("authorization", "")
         if auth.lower().startswith("bearer "):
             who = ws.tokens.who(auth[7:].strip())
-            if not who:
+            if not who or who not in AGENTS:  # a token of an agent that was removed from agents.json is dead
                 raise HTTPException(401, "unknown token")
             return who
         who = ws.tokens.who(request.cookies.get(COOKIE))
@@ -484,6 +523,12 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
                 "claude_skill": ("claude-code-skill/SKILL.md", "~/.claude/skills/ask-the-person/SKILL.md")}
     SETUP_AGENTS = ("claude", "gpt")
 
+    def setup_agent_ids() -> list[str]:
+        return [*SETUP_AGENTS, *[p for p, a in AGENTS.items() if a.get("custom")]]
+
+    def instructions_for(agent_id: str) -> str | None:
+        return agent_instructions(ws.data, agent_id)
+
     @app.get("/api/setup")
     def setup(_: str = Depends(owner)):
         """What the first-run screen needs: which agents have a token, whether any item has arrived, and the copy-ready
@@ -501,7 +546,9 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         base = f"uv --directory {q(str(ROOT))} run ws --data {q(data)}"
         return {
             "agents": [{"id": a, "display": AGENTS[a]["display"], "has_token": (ws.data / "secrets" / f"{a}.token").exists(),
-                        "submitted": sum(x["asked_by"] == a for x in asks)} for a in SETUP_AGENTS],
+                        "submitted": sum(x["asked_by"] == a for x in asks), "custom": bool(AGENTS[a].get("custom")),
+                        **({"instructions": instructions_for(a)} if AGENTS[a].get("custom") else {})}
+                       for a in setup_agent_ids()],
             "first_item": bool(asks), "snippets": snippets,
             "test_command": f'{base} ask "My first item" --as claude --kind question --text "Does this reach my inbox?"',
             "workstation_dir": str(ROOT), "data_dir": data, "is_checkout": (ROOT / "pyproject.toml").exists(),
@@ -510,10 +557,23 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     @app.post("/api/setup/token/{agent}")
     def setup_token(agent: str, who: str = Depends(owner)):
         """Create (or replace) an agent's token file in this install's data folder. The token is not returned."""
-        if agent not in SETUP_AGENTS:
+        if agent not in setup_agent_ids():
             raise NotFound(f"agent {agent}")
         write_token_file(ws.tokens, ws.data, agent)
         return {"agent": agent, "has_token": True}
+
+    @app.post("/api/agents")
+    def add_agent(body: AgentIn, who: str = Depends(owner)):
+        """Add an agent kind by name (for example codex, claude-code, muse). Creates its token file and returns the
+        copy-ready instructions. Owner only; the token itself is never returned."""
+        try:
+            agent_registry.add_custom(ws.data, body.id, body.display, body.role)
+        except InvalidAgent as e:
+            raise Invalid(str(e)) from None
+        ws.sync_agents()
+        write_token_file(ws.tokens, ws.data, body.id)
+        return {"id": body.id, "display": AGENTS[body.id]["display"], "has_token": True,
+                "instructions": instructions_for(body.id)}
 
     @app.post("/api/asks")
     def new_ask(body: AskIn, who: str = Depends(principal)):
@@ -547,7 +607,7 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     # ---- reminders: what needs the owner now, the rule, snooze and pause, the log ----------------
 
     def rcfg() -> dict:
-        return ws.config.reminders
+        return {**ws.config.reminders, "enabled": ws.config.reminders_enabled}
 
     @app.get("/api/needs-now")
     def needs_now(full: bool = False, who: str = Depends(principal)):

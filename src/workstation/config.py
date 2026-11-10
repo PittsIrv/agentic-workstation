@@ -51,6 +51,7 @@ class Config:
     daybook_url: str = "http://127.0.0.1:8765"
     daybook_scope: str = ""
     reminders: dict = field(default_factory=lambda: dict(REMINDER_DEFAULTS))
+    reminders_enabled: bool = False  # the built-in reminder rule is an optional local fallback, off by default
     reminders_set: list[str] = field(default_factory=list)  # keys the config file changed from the defaults
     coverage: list[dict] = field(default_factory=lambda: [dict(c) for c in DEFAULT_COVERAGE])
 
@@ -78,7 +79,10 @@ def load(data_dir: Path | str) -> Config:
     cfg.time_source = str(tm.get("source", cfg.time_source))
     cfg.daybook_url = str(tm.get("daybook_url", cfg.daybook_url))
     cfg.daybook_scope = str(tm.get("daybook_scope", cfg.daybook_scope))
-    rm = raw.get("reminders", {})
+    rm = dict(raw.get("reminders", {}))
+    cfg.reminders_enabled = rm.pop("enabled", cfg.reminders_enabled)
+    if not isinstance(cfg.reminders_enabled, bool):
+        raise ValueError(f"{path}: reminders.enabled must be true or false")
     unknown = sorted(set(rm) - set(REMINDER_DEFAULTS))
     if unknown:
         raise ValueError(f"{path}: unknown [reminders] keys {unknown}; known: {sorted(REMINDER_DEFAULTS)}")

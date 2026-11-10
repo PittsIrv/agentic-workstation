@@ -15,6 +15,7 @@ from pathlib import Path
 import httpx
 
 from . import config as configuration
+from . import principals
 from .principals import configure_owner, owner
 
 URL = os.environ.get("WS_URL")
@@ -64,6 +65,9 @@ def notify(title: str, body: str) -> str:
 def remind(args) -> None:
     c = client(args, args.who)
     r = c.post("/api/reminders/run", json={"channel": "notification" if args.notify else "print", "dry_run": args.dry_run})
+    if r.status_code == 409:
+        sys.exit("built-in reminders are off. Set enabled = true under [reminders] in config.toml and restart `ws serve`; "
+                 "otherwise let your agent or assistant read `ws now`.")
     if r.status_code >= 400:
         sys.exit(f"{r.status_code}: {r.text}")
     res = r.json()
@@ -89,6 +93,10 @@ def main(argv=None) -> None:
     s = sub.add_parser("serve"); s.add_argument("--port", type=int, default=None); s.add_argument("--fake", action="store_true")
     sub.add_parser("open")
     s = sub.add_parser("token"); s.add_argument("principal")
+    s = sub.add_parser("agent", help="owner: add an agent kind by name (codex, claude-code, muse, ...) or list them")
+    s.add_argument("action", choices=["add", "list"]); s.add_argument("name", nargs="?")
+    s.add_argument("--display", default=None, help="name shown on the page (default: the name, capitalised)")
+    s.add_argument("--role", default=None, help="one line about what the agent does")
     s = sub.add_parser("export"); s.add_argument("path")
     s = sub.add_parser("record"); s.add_argument("decision_id"); s.add_argument("--as", dest="who", default=None)
     s.add_argument("--out", default=None, help="write to this file or directory instead of printing")
@@ -146,6 +154,7 @@ def main(argv=None) -> None:
     args = ap.parse_args(argv)
     args.cfg = configuration.load(data_dir(args))
     configure_owner(args.cfg.owner_id, args.cfg.owner_name)
+    principals.load_custom(data_dir(args))
     if getattr(args, "who", "") is None:
         args.who = owner()
 
@@ -165,6 +174,23 @@ def main(argv=None) -> None:
         d = data_dir(args)
         f = write_token_file(Tokens(d / "tokens.json"), d, args.principal)
         print(f"token for {args.principal} written to {f} (previous one revoked)")
+    elif args.cmd == "agent":
+        if args.action == "list":
+            for pid, a in principals.AGENTS.items():
+                if a["kind"] == "agent":
+                    print(f"{pid}\t{a['display']}\t{'added' if a.get('custom') else 'built in'}\t{a['role']}")
+            return
+        if not args.name:
+            sys.exit("usage: ws agent add NAME [--display D] [--role R]")
+        from .app import agent_instructions
+        d = data_dir(args)
+        try:
+            principals.add_custom(d, args.name, args.display, args.role)
+        except principals.InvalidAgent as e:
+            sys.exit(str(e))
+        f = principals.write_token_file(principals.Tokens(d / "tokens.json"), d, args.name)
+        print(f"added {args.name}; token written to {f}\n")
+        print(agent_instructions(d, args.name) or "(instructions ship with the source checkout: docs/agent-instructions)")
     elif args.cmd == "open":
         r = client(args, owner()).post("/api/login-codes")
         if r.status_code >= 400:

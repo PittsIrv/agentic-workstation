@@ -348,6 +348,55 @@ def test_bad_reminder_config_is_refused(tmp_path, body):
         config.load(tmp_path)
 
 
+# ---- the built-in rule is an optional fallback: off by default -------------------------------------
+
+def test_reminders_are_off_by_default_and_the_switch_turns_them_on(tmp_path):
+    assert config.load(tmp_path).reminders_enabled is False
+    (tmp_path / "config.toml").write_text("[reminders]\nenabled = true\ndaily_cap = 2\n")
+    got = config.load(tmp_path)
+    assert got.reminders_enabled is True and got.reminders["daily_cap"] == 2 and got.reminders_set == ["daily_cap"]
+    (tmp_path / "config.toml").write_text('[reminders]\nenabled = "yes"\n')
+    with pytest.raises(ValueError):
+        config.load(tmp_path)
+
+
+def test_with_reminders_off_the_list_and_api_still_work_but_nothing_is_run(ws):
+    app, c, tokens = ws
+    assert app.state.ws.config.reminders_enabled is False
+    a = mk(c, tokens, title="t", urgency="high", due_at=(datetime.now(UTC) - timedelta(minutes=5)).isoformat())
+    nn = c.get("/api/needs-now", headers=H(tokens)).json()
+    assert [e["title"] for e in nn["items"]] == ["t"] and nn["items"][0]["reasons"][0]["code"] == "overdue"
+    assert nn["reminders"]["enabled"] is False and nn["reminders"]["held"] == "off" and nn["reminders"]["due"] == []
+    mine = c.get("/api/needs-now", headers=H(tokens, "claude")).json()
+    assert mine["mine"][0]["state"] == "due" and mine["reminders_enabled"] is False
+    r = c.post("/api/reminders/run", headers=H(tokens), json={"channel": "print"})
+    assert r.status_code == 409 and "off" in r.json()["error"]
+    assert app.state.ws.svc.s.reminders == []
+    assert c.get("/api/reminders/settings", headers=H(tokens)).json()["enabled"] is False
+    # snooze is part of the board's list, not of the reminder rule, so it still works
+    assert c.post("/api/snooze", headers=H(tokens), json={"key": f"ask:{a['id']}", "minutes": 60}).status_code == 200
+    assert c.get("/api/needs-now", headers=H(tokens)).json()["items"] == []
+
+
+def test_with_reminders_on_the_rule_runs(ws):
+    app, c, tokens = ws
+    app.state.ws.config.reminders_enabled = True
+    app.state.ws.config.reminders.update(quiet_start="00:00", quiet_end="00:00")
+    mk(c, tokens, title="t", urgency="high", due_at=(datetime.now(UTC) - timedelta(minutes=5)).isoformat())
+    nn = c.get("/api/needs-now", headers=H(tokens)).json()
+    assert nn["reminders"]["enabled"] is True and len(nn["reminders"]["due"]) == 1
+    assert c.post("/api/reminders/run", headers=H(tokens), json={"channel": "print"}).json()["recorded"] is True
+
+
+def test_ws_remind_says_the_rule_is_off(ws, capsys, monkeypatch):
+    app, c, tokens = ws
+    data = app.state.ws.data
+    monkeypatch.setattr(cli, "client", lambda args, who: _Bridge(c, tokens[who]))
+    with pytest.raises(SystemExit) as e:
+        cli.main(["--data", str(data), "remind"])
+    assert "reminders are off" in str(e.value)
+
+
 # ---- hostile text and the local command ------------------------------------------------------------
 
 def test_hostile_titles_are_stripped_for_the_terminal():
@@ -383,6 +432,7 @@ def test_ws_now_remind_snooze_pause_from_the_command_line(ws, tmp_path, capsys, 
     (data / "secrets").mkdir(exist_ok=True)
     for who in ("claude",):
         (data / "secrets" / f"{who}.token").write_text(tokens[who])
+    app.state.ws.config.reminders_enabled = True  # the built-in rule is off by default
     app.state.ws.config.reminders.update(quiet_start="00:00", quiet_end="00:00")  # the real clock may be at night
     mk(c, tokens, title=HOSTILE[:100], urgency="high", due_at=(datetime.now(UTC) - timedelta(minutes=5)).isoformat())
     # run the CLI against the in-process app by routing its httpx client to the TestClient

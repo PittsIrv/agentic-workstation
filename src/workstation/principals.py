@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import secrets
 import tempfile
 import threading
@@ -53,6 +54,90 @@ EVENT_CAPABILITY = {
     "agent_blocked": {"agent_blocked"},
 }
 HUMAN_ONLY = {"decision_resolved", "project_upserted", "thread_created"}
+
+
+# ---- agent kinds the owner adds (Codex, Claude Code, Muse, anything that can run a command) ---------------
+# Stored in `<data>/agents.json` as {id: {"display": ..., "role": ...}}. An added agent gets the same peer capabilities as
+# `claude` plus recording reviews; nothing that belongs to the owner (see HUMAN_ONLY and the owner-only checks).
+BUILTIN = ("owner", "claude", "gpt", "gemini", "system")
+CUSTOM_CAPS = {"reply", "task_create", "task_update_own", "artifact_link", "review_record", "decision_propose",
+               "agent_blocked", "ask_owner"}
+AGENT_ID_RE = re.compile(r"[a-z][a-z0-9-]{0,31}")
+DEFAULT_ROLE = "Agent added by the owner; works through the board"
+
+
+class InvalidAgent(ValueError): ...
+
+
+_registry_lock = threading.RLock()  # requests run in a thread pool; the registry is changed in place under this lock
+
+
+def _plain(text: object, what: str, limit: int) -> str:
+    if not isinstance(text, str) or not text.strip() or len(text.strip()) > limit \
+            or any(not c.isprintable() for c in text):
+        raise InvalidAgent(f"{what} must be 1 to {limit} printable characters")
+    return text.strip()
+
+
+def check_new_agent(agent_id: str, display: str | None, role: str | None) -> tuple[str, str, str]:
+    if not isinstance(agent_id, str) or not AGENT_ID_RE.fullmatch(agent_id):
+        raise InvalidAgent("name must be lowercase letters, digits or -, start with a letter, and be at most 32 long")
+    if agent_id in BUILTIN or agent_id == owner() or agent_id in AGENTS:
+        raise InvalidAgent(f"{agent_id} is already taken")
+    return agent_id, _plain(display or agent_id.capitalize(), "display name", 40), _plain(role or DEFAULT_ROLE, "role", 200)
+
+
+def _agents_file(data_dir: Path) -> Path:
+    return Path(data_dir) / "agents.json"
+
+
+def load_custom(data_dir: Path) -> None:
+    """Install the owner-added agents from `<data>/agents.json`, replacing any installed by an earlier call."""
+    with _registry_lock:
+        for pid in [p for p, a in list(AGENTS.items()) if a.get("custom")]:
+            del AGENTS[pid]
+        f = _agents_file(data_dir)
+        if not f.exists():
+            return
+        for pid, card in json.loads(f.read_text()).items():
+            if not isinstance(card, dict):
+                continue
+            try:
+                check_new_agent(pid, card.get("display"), card.get("role"))
+            except InvalidAgent:
+                continue  # a hand-edited file never installs a reserved or malformed id
+            AGENTS[pid] = {"kind": "agent", "display": card["display"], "handle": pid,
+                           "role": card.get("role") or DEFAULT_ROLE, "capabilities": set(CUSTOM_CAPS),
+                           "projects": {"*"}, "runtime": "board", "custom": True}
+
+
+def custom_mtime(data_dir: Path) -> tuple[int, int]:
+    """A change marker for agents.json (modification time in ns and size), (0, 0) when the file is absent."""
+    f = _agents_file(data_dir)
+    try:
+        st = f.stat()
+    except FileNotFoundError:
+        return (0, 0)
+    return (st.st_mtime_ns, st.st_size)
+
+
+def add_custom(data_dir: Path, agent_id: str, display: str | None = None, role: str | None = None) -> dict:
+    """Register a new agent kind. Serialised across processes; the file is replaced whole."""
+    d = Path(data_dir)
+    d.mkdir(parents=True, exist_ok=True)
+    with open(d / "agents.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        load_custom(d)  # pick up what another process added meanwhile
+        agent_id, display, role = check_new_agent(agent_id, display, role)
+        f = _agents_file(d)
+        cards = json.loads(f.read_text()) if f.exists() else {}
+        cards[agent_id] = {"display": display, "role": role}
+        fd, tmp = tempfile.mkstemp(dir=d, prefix=".agents-")
+        with os.fdopen(fd, "w") as out:
+            json.dump(cards, out, indent=1)
+        os.replace(tmp, f)
+        load_custom(d)
+    return AGENTS[agent_id]
 
 
 def configure_owner(owner_id: str, name: str) -> None:

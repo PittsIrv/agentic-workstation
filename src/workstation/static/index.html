@@ -79,6 +79,7 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const link = (url, label) => /^(https?:\/\/|#\/)/.test(url || "") ? `<a href="${esc(url)}"${url.startsWith("#") ? "" : ' target="_blank" rel="noopener noreferrer"'}>${esc(label)}</a>` : esc(label);
 let OWNER = "owner";  // replaced from /api/principals at start
+let AGENT_IDS = ["claude", "gpt", "gemini"];  // replaced from /api/principals: every agent kind, added ones included
 const NAMES = {owner: "Owner", claude: "Claude", gpt: "GPT", gemini: "Gemini", system: "Workstation"};
 const who = id => `<span class="who ${esc(id)}${id === OWNER ? " human" : ""}">${esc(NAMES[id] || id)}</span>`;
 const fmt = iso => { if (!iso) return ""; const d = new Date(iso); return d.toLocaleString([], {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"}); };
@@ -141,9 +142,10 @@ function decisionCard(d, full, extra = "") {
 }
 function agentRows(agents) {
   return agents.map(a => {
-    const state = a.running ? ["wait", `working on ${a.running}`] : a.available ? ["on", "ready"] : a.pull_fallback ? ["wait", "CLI unavailable · session pickup"] : ["off", "offline"];
-    return `<div class="ag"><span><span class="dot ${state[0]}"></span>${who(a.id)}${!a.available && String(a.reason).replace(/\s+/g, "-") === a.runtime ? "" : ` <small>${esc(a.runtime)}</small>`}</span><small>${esc(state[1])}${a.waiting ? ` · ${a.waiting} waiting` : ""} · last reply ${esc(ago(a.last_reply_at))}</small></div>
-    ${!a.available || a.last_failure ? `<small class="meta" style="margin:-2px 0 4px 14px">${esc(a.available ? "last failure: " + (a.last_failure || "") : a.reason)}</small>` : ""}`;
+    const board = a.runtime === "board-pickup";
+    const state = a.running ? ["wait", `working on ${a.running}`] : board ? ["on", "works through the board"] : a.available ? ["on", "ready"] : a.pull_fallback ? ["wait", "CLI unavailable · session pickup"] : ["off", "offline"];
+    return `<div class="ag"><span><span class="dot ${state[0]}"></span>${who(a.id)}${board || (!a.available && String(a.reason).replace(/\s+/g, "-") === a.runtime) ? "" : ` <small>${esc(a.runtime)}</small>`}</span><small>${esc(state[1])}${a.waiting ? ` · ${a.waiting} waiting` : ""} · last reply ${esc(ago(a.last_reply_at))}</small></div>
+    ${(!a.available && !board) || a.last_failure ? `<small class="meta" style="margin:-2px 0 4px 14px">${esc(a.available ? "last failure: " + (a.last_failure || "") : a.reason)}</small>` : ""}`;
   }).join("");
 }
 const waited = sec => sec < 90 ? "just now" : sec < 5400 ? Math.round(sec / 60) + " min" : sec < 172800 ? Math.round(sec / 3600) + " h" : Math.round(sec / 86400) + " d";
@@ -273,7 +275,7 @@ async function renderTask(id) {
   <div class="card"><span class="k">Edit</span><form id="edittask" data-id="${esc(t.id)}" data-v="${t.version}" class="row" style="flex-direction:column;align-items:stretch">
   <input name="title" value="${esc(t.title)}"><input name="next_action" value="${esc(t.next_action)}" placeholder="Next action">
   <div class="row" style="margin:0"><select name="status" style="width:auto">${["inbox", "ready", "in_progress", "blocked", "needs_review", "done", "canceled"].map(s => `<option ${s === t.status ? "selected" : ""}>${s}</option>`).join("")}</select>
-  <select name="owner" style="width:auto">${[OWNER, "claude", "gpt", "gemini"].map(o => `<option value="${esc(o)}" ${o === t.owner ? "selected" : ""}>${esc(NAMES[o])}</option>`).join("")}</select>
+  <select name="owner" style="width:auto">${[OWNER, ...AGENT_IDS].map(o => `<option value="${esc(o)}" ${o === t.owner ? "selected" : ""}>${esc(NAMES[o])}</option>`).join("")}</select>
   <select name="priority" style="width:auto">${["P0", "P1", "P2", "P3"].map(p => `<option ${p === t.priority ? "selected" : ""}>${p}</option>`).join("")}</select><button class="primary">Save</button><span class="err" id="editerr"></span></div></form></div></div>
   <div class="card"><span class="k">History (audit)</span><div class="tablewrap"><table><tr><th>When</th><th>Who</th><th>Event</th><th>Status after</th></tr>
   ${t.history.slice().reverse().map(h => `<tr><td>${esc(fmt(h.at))}</td><td>${who(h.actor)}</td><td>${esc(h.type.replace(/_/g, " "))}</td><td>${esc(h.status || "")}</td></tr>`).join("")}</table></div></div></div>`;
@@ -309,7 +311,7 @@ async function renderTasks() {
   $("#sub").textContent = "All tasks, newest change first.";
   $("#view").innerHTML = `<form id="taskfilter" class="row" style="margin-bottom:12px"><input name="q" placeholder="Search" value="${esc(q.get("q") || "")}" style="width:220px">
   <select name="status" style="width:auto"><option value="">Any status</option>${["inbox", "ready", "in_progress", "blocked", "needs_review", "done", "canceled"].map(s => `<option ${s === q.get("status") ? "selected" : ""}>${s}</option>`).join("")}</select>
-  <select name="owner_id" style="width:auto"><option value="">Any owner</option>${[OWNER, "claude", "gpt", "gemini"].map(o => `<option value="${esc(o)}" ${o === q.get("owner_id") ? "selected" : ""}>${esc(NAMES[o])}</option>`).join("")}</select><button>Filter</button></form>
+  <select name="owner_id" style="width:auto"><option value="">Any owner</option>${[OWNER, ...AGENT_IDS].map(o => `<option value="${esc(o)}" ${o === q.get("owner_id") ? "selected" : ""}>${esc(NAMES[o])}</option>`).join("")}</select><button>Filter</button></form>
   ${ts.map(taskCard).join("") || '<p class="empty">No tasks match.</p>'}`;
 }
 async function renderActivity() {
@@ -325,6 +327,7 @@ const PAUSES = [[60, "1 h"], [480, "8 h"], ["", "until I resume"]];
 function pauseButtons() { return PAUSES.map(([m, l]) => `<button data-pause="${m}">${l}</button>`).join(" "); }
 function remindersLine(nn) {
   const r = nn.reminders;
+  if (!r.enabled) return "";
   if (r.paused) return `<div class="note" style="margin:0 0 8px">Reminders are paused${r.paused.until ? " until " + esc(fmt(r.paused.until)) : " until you resume"}. <button data-resume="1">Resume</button></div>`;
   const state = r.held === "quiet_hours" ? `quiet hours (${esc(r.quiet_hours)}): no reminders now` : r.held === "daily_cap" ? `today's cap of ${r.daily_cap} is used up` : `reminders on, ${r.sent_today} of ${r.daily_cap} sent today`;
   return `<div class="note" style="margin:0 0 8px">${state}. Pause reminders: ${pauseButtons()} · <a href="#/setup">settings</a></div>`;
@@ -333,6 +336,7 @@ async function updateNowBar() {
   const bar = $("#nowbar");
   try {
     const nn = await api("/api/needs-now"); const r = nn.reminders;
+    if (!r.enabled) { bar.classList.add("hidden"); return; }
     if (r.paused) bar.innerHTML = `Reminders are paused${r.paused.until ? " until " + esc(fmt(r.paused.until)) : ""}. <button data-resume="1">Resume</button>`;
     else if (nn.items.length && !r.quiet_now) bar.innerHTML = `<b>${nn.items.length} item${nn.items.length === 1 ? "" : "s"} need${nn.items.length === 1 ? "s" : ""} you now.</b> <a href="#/">See why on Home</a>`;
     else { bar.classList.add("hidden"); return; }
@@ -340,6 +344,7 @@ async function updateNowBar() {
   } catch (e) { bar.classList.add("hidden"); }
 }
 async function reminderLog() {
+  if (!(await api("/api/reminders/settings")).enabled) return "";
   const l = await api("/api/reminders/log"), c = l.counts;
   const rows = l.rows.map(r => `<tr><td>${esc(fmt(r.at))}</td><td><a href="${esc(r.link)}">${esc(r.title)}</a></td><td>${esc(r.urgency)}</td><td>${esc(r.why)}</td><td>${esc(r.channel)}</td><td>${esc({acted_in_window: "acted on within the window", acted_later: "acted on later", snoozed: "snoozed", not_yet: "no action yet", item_gone: "item no longer exists"}[r.outcome])}${r.after_s != null ? " (" + esc(waited(r.after_s)) + " later)" : ""}</td></tr>`).join("");
   return `<section><h2>Reminder log <span class="cnt">${l.total}</span></h2><p class="note">A reminder counts as acted on if the item was answered within ${l.window_minutes} minutes. Facts only, no score: ${c.in_window} acted on within the window, ${c.later} later, ${c.snoozed} snoozed, ${c.waiting} with no action yet.</p>
@@ -347,6 +352,7 @@ async function reminderLog() {
 }
 async function reminderSettings() {
   const r = await api("/api/reminders/settings");
+  if (!r.enabled) return `<section><h2>Reminders</h2><div class="card"><div class="note" style="margin:0">Off. Reminding you is the job of your own agents or a personal assistant that reads this board (<code>ws now</code>, <code>GET /api/needs-now</code>). A built-in rule exists as an optional local fallback for people with no assistant: set <code>enabled = true</code> under <code>[reminders]</code> in <code>config.toml</code> and restart <code>ws serve</code>.</div></div></section>`;
   const rows = r.settings.map(x => `<tr><td>${esc(x.label)}</td><td><b>${esc(x.value)}</b></td><td>${esc(x.default)}</td><td>${x.changed ? "changed in config" : "default"}</td></tr>`).join("");
   return `<section><h2>Reminders</h2><div class="card"><div class="note" style="margin:0 0 8px">${esc(r.limits)} Times are in ${esc(r.tz)}.</div>
   <div>${r.paused ? `Paused${r.paused.until ? " until " + esc(fmt(r.paused.until)) : " until you resume"}. <button data-resume="1">Resume</button>` : `Reminders are on. Pause them: ${pauseButtons()}`}</div>
@@ -370,7 +376,7 @@ function askRow(e) {
 }
 const SNOOZES = [[60, "1 h"], [240, "4 h"], [1440, "1 day"]];
 function snoozeBar(e) {
-  if (e.snoozed_until) return `<div class="note snz">Snoozed until ${esc(fmt(e.snoozed_until))}. No reminders for it until then. <button data-unsnooze="${esc(e.key)}">Unsnooze</button></div>`;
+  if (e.snoozed_until) return `<div class="note snz">Snoozed until ${esc(fmt(e.snoozed_until))}. It stays out of Needs you now until then. <button data-unsnooze="${esc(e.key)}">Unsnooze</button></div>`;
   return `<div class="note snz">Snooze: ${SNOOZES.map(([m, l]) => `<button data-snooze="${esc(e.key)}" data-min="${m}">${l}</button>`).join(" ")}</div>`;
 }
 function inboxRow(e) {
@@ -440,9 +446,12 @@ function setupPanel(s) {
   SNIP = {...Object.fromEntries(Object.entries(s.snippets).map(([k, v]) => [k, v.text])), test: s.test_command};
   const agents = s.agents.map(a => `<div class="row" style="margin:4px 0"><span class="who ${esc(a.id)}">${esc(a.display)}</span>${a.has_token ? `<span class="ok-line">Token ready</span><button data-token="${esc(a.id)}" data-label="replace the token (the agent must be set up again)">Replace token</button>` : `<button class="primary" data-token="${esc(a.id)}">Create token</button>`}</div>`).join("");
   const snip = (key, title) => s.snippets[key].text ? `<details class="card" style="margin:6px 0"><summary>${esc(title)}</summary><div class="note">Paste into: ${esc(s.snippets[key].into)}</div><pre class="cmd">${esc(s.snippets[key].text)}</pre><div class="row"><button data-copy="${esc(key)}">Copy</button><span class="note" data-copymsg></span></div></details>` : "";
+  const added = s.agents.filter(a => a.custom && a.instructions).map(a => { SNIP["agent:" + a.id] = a.instructions;
+    return `<details class="card" style="margin:6px 0"><summary>${esc(a.display)}: instructions</summary><div class="note">Paste into the file ${esc(a.display)} reads for project rules (AGENTS.md or CLAUDE.md, or its own instructions). The name <code>${esc(a.id)}</code> and this install's folders are filled in.</div><pre class="cmd">${esc(a.instructions)}</pre><div class="row"><button data-copy="${esc("agent:" + a.id)}">Copy</button><span class="note" data-copymsg></span></div></details>`; }).join("");
+  const addForm = `<details class="card" style="margin:6px 0"><summary>Add another agent (Codex, Claude Code, Muse, any other)</summary><form id="addagent"><div class="row"><input name="id" placeholder="name, e.g. muse" pattern="[a-z][a-z0-9\-]{0,31}" maxlength="32" required style="width:auto"><input name="display" placeholder="shown as (optional), e.g. Muse" maxlength="40" style="width:auto"><button class="primary">Add and create token</button></div><div class="note">Lowercase letters, digits and -. It gets its own token and instructions, and appears under Your agents. It can submit items and work on tasks; it cannot answer, accept, reassign or change settings.</div><div class="err"></div></form></details>`;
   return `<div class="card"><ol class="steps">
     <li><h3>Give each agent a token</h3><div class="note">A token is a file in this install's data folder that lets one agent submit items. It cannot answer them.</div>${agents}</li>
-    <li><h3>Teach the agent to ask you</h3>${s.is_checkout ? snip("codex", "Codex: AGENTS.md text") + snip("claude_skill", "Claude Code: skill (recommended)") + snip("claude_md", "Claude Code: CLAUDE.md text instead") : '<div class="note">The ready-made text ships in the source checkout (docs/agent-instructions).</div>'}<div class="note">The folders in these texts are filled in for this install.</div></li>
+    <li><h3>Teach the agent to ask you</h3>${s.is_checkout ? snip("codex", "Codex: AGENTS.md text") + snip("claude_skill", "Claude Code: skill (recommended)") + snip("claude_md", "Claude Code: CLAUDE.md text instead") : '<div class="note">The ready-made text ships in the source checkout (docs/agent-instructions).</div>'}${added}${addForm}<div class="note">The folders in these texts are filled in for this install.</div></li>
     <li><h3>Send a test item</h3><div class="note">Run this in a terminal, or ask the agent to. This page notices the item by itself.</div><pre class="cmd">${esc(s.test_command)}</pre><div class="row"><button data-copy="test">Copy command</button><span class="note" data-copymsg></span></div>
     <div>${s.first_item ? '<span class="ok-line">First item received. Open the <a href="#/inbox">Inbox</a> to answer it.</span>' : '<span class="note">Waiting for the first item…</span>'}</div></li></ol></div>`;
 }
@@ -557,6 +566,10 @@ document.addEventListener("submit", async ev => {
     if (f.id === "decform") { const d = draftCache; await api("/api/decisions", {method: "POST", body: {question: fd.question, context: fd.context, project_id: d.project_id, thread_id: d.thread_id,
       options: fd.options.split("\n").map(s => s.trim()).filter(Boolean).map(label => ({label, detail: (d.options.find(o => o.label === label) || {}).detail || ""})), recommendations: d.recommendations, evidence: d.evidence, urgency: fd.urgency, follow_up_owner: fd.follow_up_owner,
       idempotency_key: crypto.randomUUID()}}); draftCache = null; }
+    if (f.id === "addagent") { await api("/api/agents", {method: "POST", body: {id: fd.id, display: fd.display || null}});
+      const p = await api("/api/principals");
+      for (const [id, a] of Object.entries(p.principals)) NAMES[id] = a.display;
+      AGENT_IDS = Object.entries(p.principals).filter(([, a]) => a.kind === "agent").map(([id]) => id); }
     if (f.id === "taskfilter") { const q = new URLSearchParams(Object.entries(fd).filter(([, v]) => v)); location.hash = "#/tasks?" + q; return; }
     await refresh();
   } catch (e) { const el = f.querySelector(".err") || $("#threaderr"); if (el) el.textContent = e.message; else alert(e.message); }
@@ -566,6 +579,7 @@ document.addEventListener("submit", async ev => {
     const p = await api("/api/principals");
     OWNER = p.owner;
     for (const [id, a] of Object.entries(p.principals)) NAMES[id] = a.display;
+    AGENT_IDS = Object.entries(p.principals).filter(([, a]) => a.kind === "agent").map(([id]) => id);
   } catch (e) { /* signed out: route() shows how to sign in */ }
   route(); setInterval(poll, 2000);
 })();
