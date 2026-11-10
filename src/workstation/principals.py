@@ -138,6 +138,8 @@ def write_token_file(tokens: "Tokens", data_dir: Path, principal: str) -> Path:
     token = tokens.issue(principal)
     f = Path(data_dir) / "secrets" / f"{principal}.token"
     f.parent.mkdir(parents=True, exist_ok=True)
-    f.write_text(token)
-    f.chmod(0o600)
+    fd, tmp = tempfile.mkstemp(dir=f.parent, prefix=".token-")  # created 0600; replaced whole, never half written
+    with os.fdopen(fd, "w") as out:
+        out.write(token)
+    os.replace(tmp, f)
     return f
