@@ -10,7 +10,7 @@ import fcntl
 import secrets
 import threading
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
+from . import inbox as inbox_view
 from . import views
 from . import config as configuration
 from .principals import AGENTS, Tokens, can, configure_owner, is_human
@@ -60,6 +61,26 @@ class DecisionIn(BaseModel):
     thread_id: str | None = None
     follow_up_owner: str = "claude"
     idempotency_key: str | None = None
+
+
+class AskIn(BaseModel):
+    title: str
+    kind: str = "question"
+    text: str = ""
+    blocked: str = ""
+    cost_of_waiting: str = ""
+    urgency: str = "normal"
+    project_id: str | None = None
+    task_id: str | None = None
+    due_at: str | None = None
+    due_tz: str | None = None
+    url: str | None = None
+    idempotency_key: str | None = None
+
+
+class AnswerIn(BaseModel):
+    resolution: str
+    note: str = ""
 
 
 class ResolveIn(BaseModel):
@@ -152,6 +173,7 @@ class Workstation:
         self.tokens = Tokens(self.data / "tokens.json")
         self.dispatcher: Dispatcher | None = None
         self.svc = Service(self.store, on_dispatch=lambda d: self.dispatcher and self.dispatcher.submit(d))
+        self.svc.max_open_asks = self.config.inbox_max_open_per_agent
         if runners is None:
             runners = default_runners(self.config.claude_model, self.config.gpt_model, self.config.gpt_effort)
         self.dispatcher = Dispatcher(self.svc, runners)
@@ -416,6 +438,37 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
             d["idempotency_key"] = f"{who}:{d['idempotency_key']}"
         return views.task_card(ws.svc, ws.svc.record_review(who, task_id, **d))
 
+    # ---- inbox: items agents submit for the owner ------------------------------------------
+
+    @app.post("/api/asks")
+    def new_ask(body: AskIn, who: str = Depends(principal)):
+        d = body.model_dump()
+        if d["idempotency_key"]:
+            d["idempotency_key"] = f"{who}:{d['idempotency_key']}"
+        a, outcome = ws.svc.create_ask(who, **d)
+        return {"outcome": outcome, "ask": inbox_view.ask_card(ws.svc, a)}
+
+    @app.get("/api/asks")
+    def my_asks(status: str | None = None, who: str = Depends(principal)):
+        """The owner sees every ask; an agent sees only its own, with the owner's answer once there is one."""
+        if status not in (None, "open", "closed", "all"):
+            raise Invalid("status must be open, closed or all")
+        with ws.store.lock:
+            return inbox_view.asks_for(ws.svc, who, status)
+
+    @app.get("/api/inbox")
+    def inbox(_: str = Depends(owner)):
+        with ws.store.lock:
+            return inbox_view.inbox(ws.svc, datetime.now(timezone.utc))
+
+    @app.post("/api/asks/{ask_id}/answer")
+    def answer_ask(ask_id: str, body: AnswerIn, who: str = Depends(owner)):
+        return inbox_view.ask_card(ws.svc, ws.svc.answer_ask(who, ask_id, **body.model_dump()))
+
+    @app.post("/api/asks/{ask_id}/withdraw")
+    def withdraw_ask(ask_id: str, who: str = Depends(principal)):
+        return inbox_view.ask_card(ws.svc, ws.svc.withdraw_ask(who, ask_id))
+
     # ---- normalised event intake (assistants and bridges) ----------------------------------
 
     @app.post("/api/events")
@@ -444,6 +497,11 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
                                                          "context", "urgency", "due_at", "due_tz", "thread_id")
                                        if k in p})
             return {"outcome": "created", "decision": views.decision_card(d)}
+        if body.event_type == "ask_created":
+            a, outcome = svc.create_ask(who, project_id=body.project_id or None, idempotency_key=key,
+                                        **{k: p[k] for k in ("title", "kind", "text", "blocked", "cost_of_waiting",
+                                                             "urgency", "task_id", "due_at", "due_tz", "url") if k in p})
+            return {"outcome": outcome, "ask": inbox_view.ask_card(svc, a)}
         if body.event_type == "decision_resolved":
             return {"decision": views.decision_card(svc.resolve_decision(who, p.get("id", ""), status=p.get("status", ""),
                                                                         option_id=p.get("option_id"),

@@ -22,19 +22,19 @@ AGENTS: dict[str, dict] = {
     },
     "claude": {
         "kind": "agent", "display": "Claude", "handle": "claude", "role": "Engineering lead: implements, tests, ships",
-        "capabilities": {"reply", "task_create", "task_update_own", "artifact_link", "decision_propose", "agent_blocked"},
+        "capabilities": {"reply", "task_create", "task_update_own", "artifact_link", "decision_propose", "agent_blocked", "ask_owner"},
         "projects": {"*"}, "runtime": "claude-cli",
     },
     "gpt": {
         "kind": "agent", "display": "GPT", "handle": "gpt",
         "role": "Independent research and review peer; does not edit Claude-owned code",
-        "capabilities": {"reply", "review_record", "decision_propose", "task_suggest", "agent_blocked"},
+        "capabilities": {"reply", "review_record", "decision_propose", "task_suggest", "agent_blocked", "ask_owner"},
         "projects": {"*"}, "runtime": "codex-cli",
     },
     "gemini": {
         "kind": "agent", "display": "Gemini", "handle": "gemini",
         "role": "Secretary: reminders, schedule, organisation; makes no technical or strategic decisions",
-        "capabilities": {"task_create_for_human", "task_update_own", "agent_blocked"},
+        "capabilities": {"task_create_for_human", "task_update_own", "agent_blocked", "ask_owner"},
         "projects": {"*"}, "runtime": "not-connected",
     },
     # Internal author of notices (dispatch failures, budget limits). Never gets a token.

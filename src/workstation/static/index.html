@@ -57,7 +57,7 @@ table{width:100%;border-collapse:collapse;font-size:13.5px} th,td{text-align:lef
 </head>
 <body>
 <div class="top"><h1>Workstation</h1>
-<nav><a href="#/" data-nav="home">Home</a><a href="#/threads" data-nav="threads">Threads</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/activity" data-nav="activity">Activity</a><a href="#/review" data-nav="review">Review</a></nav></div>
+<nav><a href="#/" data-nav="home">Home</a><a href="#/inbox" data-nav="inbox">Inbox <span id="inboxcnt" class="pill"></span></a><a href="#/threads" data-nav="threads">Threads</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/activity" data-nav="activity">Activity</a><a href="#/review" data-nav="review">Review</a></nav></div>
 <div class="sub" id="sub">Loading…</div>
 <div id="offline" class="banner hidden" role="status"></div>
 <main id="view"></main>
@@ -291,6 +291,36 @@ async function renderActivity() {
   ${ev.map(e => `<tr><td>${e.seq}</td><td>${esc(fmt(e.at))}</td><td>${who(e.actor)}</td><td>${esc(e.type.replace(/_/g, " "))}</td><td>${esc(e.summary)}</td><td>${esc(e.source_system)}${e.provenance?.confidence ? " · " + esc(e.provenance.confidence) : ""}</td></tr>`).join("")}</table></div>`;
 }
 
+// ---------- Inbox ----------
+const KIND = {decision: "Decision", review: "Review", approval: "Approval", question: "Question", blocked: "Blocked"};
+const waited = sec => sec < 90 ? "just now" : sec < 5400 ? Math.round(sec / 60) + " min" : sec < 172800 ? Math.round(sec / 3600) + " h" : Math.round(sec / 86400) + " d";
+function inboxItem(e) {
+  const open = e.source === "ask";
+  const who_ = who(e.asked_by);
+  const lines = [e.blocked && `<div class="note"><b>Blocked:</b> ${esc(e.blocked)}</div>`,
+                 e.cost_of_waiting && `<div class="note"><b>If it waits:</b> ${esc(e.cost_of_waiting)} <span title="Written by the agent, not checked">(agent's words)</span></div>`].filter(Boolean).join("");
+  const body = e.text ? `<div class="body" style="white-space:pre-wrap;margin-top:6px">${esc(e.text)}</div>` : "";
+  const ref = e.url ? ` · ${link(e.url, "link")}` : "";
+  let actions;
+  if (!open) actions = `<div class="row"><a class="btn" href="${esc(e.link)}">Open ${e.source === "decision" ? "decision card" : "task"}</a></div>`;
+  else if (e.kind === "approval") actions = `<div class="row"><input class="anote" placeholder="Note (optional)" style="flex:1;min-width:160px"><button data-ans="${esc(e.id)}" data-res="approved" data-label="approve" class="primary">Approve</button><button data-ans="${esc(e.id)}" data-res="declined" data-label="decline">Decline</button><button data-ans="${esc(e.id)}" data-res="dismissed" data-label="dismiss">Dismiss</button></div>`;
+  else actions = `<div class="row"><textarea class="anote" placeholder="Your answer" style="min-height:52px"></textarea></div><div class="row"><button data-ans="${esc(e.id)}" data-res="answered" class="primary">Answer</button><button data-ans="${esc(e.id)}" data-res="dismissed" data-label="dismiss">Dismiss</button></div>`;
+  return `<div class="card ib" data-ask="${esc(e.id)}"><div class="row" style="margin:0;justify-content:space-between"><span class="t">${esc(e.title)}</span><span>${e.overdue ? pill("overdue", "bad") + " " : ""}${e.urgency === "high" ? pill("high", "ask") + " " : e.urgency === "low" ? pill("low") + " " : ""}${pill(KIND[e.kind] || e.kind, "")}</span></div>
+  <div class="meta"><span>${who_} · ${esc(e.project || "no project")}</span><span>waiting ${esc(waited(e.waiting_s))}</span>${e.due_at ? `<span>due ${esc(fmt(e.due_at))}</span>` : ""}<span>${e.source === "ask" ? "asked by agent" : e.source}</span>${ref}</div>
+  ${lines}${body}${actions}<div class="err"></div></div>`;
+}
+async function renderInbox() {
+  const ib = await api("/api/inbox");
+  $("#sub").textContent = "Everything an agent is waiting on you for, most urgent first: overdue, then high, normal, low; then the earliest deadline, then the longest wait.";
+  const done = ib.answered.map(a => `<tr><td>${who(a.asked_by)}</td><td>${esc(a.title)}</td><td>${esc(a.resolution || a.status)}${a.note ? ": " + esc(a.note) : ""}</td><td>${esc(fmt(a.closed_at))}</td></tr>`).join("");
+  $("#view").innerHTML = `<section><h2>Needs you <span class="cnt">${ib.items.length}</span></h2>
+  ${ib.items.map(inboxItem).join("") || '<p class="empty">Nothing is waiting on you. Agents submit items with <code>ws ask</code>.</p>'}</section>
+  ${done ? `<section><h2>Recently answered</h2><div class="tablewrap"><table><tr><th>From</th><th>Item</th><th>Outcome</th><th>When</th></tr>${done}</table></div></section>` : ""}`;
+}
+async function updateInboxCount() {
+  try { const ib = await api("/api/inbox"); const el = $("#inboxcnt"); el.textContent = ib.items.length; el.classList.toggle("ask", ib.items.length > 0); } catch (e) { /* signed out */ }
+}
+
 // ---------- router, polling, events ----------
 let seq = -1, busy = false, again = false;
 async function route(force) {
@@ -307,7 +337,9 @@ async function route(force) {
     else if (parts[0] === "decisions" && parts[1]) await renderDecision(parts[1]);
     else if (parts[0] === "activity") await renderActivity();
     else if (parts[0] === "review") await renderReview(parts[1]);
+    else if (parts[0] === "inbox") await renderInbox();
     $("#offline").classList.add("hidden");
+    updateInboxCount();
   } catch (e) { if (e.message !== "signed out") { $("#offline").textContent = "Could not load: " + e.message; $("#offline").classList.remove("hidden"); } }
   finally { busy = false; }
   if (again) { again = false; await route(); }  // the hash changed while rendering
@@ -339,7 +371,13 @@ document.addEventListener("click", async ev => {
       if (b.dataset.rec === "copy") { await navigator.clipboard.writeText(rec.markdown); msg.textContent = "Copied. Paste it into your repo, for example docs/decisions/" + rec.filename; }
       else { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rec.markdown], {type: "text/markdown"})); a.download = rec.filename; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); msg.textContent = "Saved " + rec.filename; }
       return; }
-    if (b.dataset.task) { b.disabled = true; await api(`/api/tasks/${b.dataset.task}`, {method: "PATCH", body: {expected_version: +b.dataset.v, changes: {status: b.dataset.status}}}); }
+    if (b.dataset.ans) {
+      if (b.dataset.label && !b.dataset.armed) { b.dataset.armed = "1"; b.dataset.text = b.textContent; b.textContent = `Confirm ${b.dataset.label}`;
+        setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = b.dataset.text; } }, 5000); return; }
+      b.disabled = true;
+      const card = b.closest(".ib"); try { await api(`/api/asks/${encodeURIComponent(b.dataset.ans)}/answer`, {method: "POST", body: {resolution: b.dataset.res, note: card.querySelector(".anote").value.trim()}}); }
+      catch (e) { card.querySelector(".err").textContent = e.message; b.disabled = false; return; } }
+    else if (b.dataset.task) { b.disabled = true; await api(`/api/tasks/${b.dataset.task}`, {method: "PATCH", body: {expected_version: +b.dataset.v, changes: {status: b.dataset.status}}}); }
     else if (b.dataset.approve || b.dataset.resolve) {
       if (!b.dataset.armed) { b.dataset.armed = "1"; b.dataset.text = b.textContent; b.textContent = b.dataset.approve ? `Confirm: approve “${b.dataset.label}”` : `Confirm ${b.dataset.s === "deferred" ? "defer" : "reject"}`;
         setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = b.dataset.text; } }, 5000); return; }

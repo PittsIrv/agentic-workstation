@@ -138,11 +138,20 @@ def site(tmp_path_factory):
         http.patch(f"/api/tasks/{task['id']}", json={"expected_version": http.get(f"/api/tasks/{task['id']}").json()["version"],
                                                      "changes": {"status": status}}).raise_for_status()
     review_md = http.get("/api/review/record").json()["markdown"]
+    agent_tokens = {a: app.state.ws.tokens.issue(a) for a in ("claude", "gpt")}
+    for agent, kind in (("claude", "approval"), ("gpt", "question")):  # items from two agents, every text field hostile
+        http.post("/api/asks", headers={"Authorization": f"Bearer {agent_tokens[agent]}"}, json={
+            "title": HOSTILE[:200], "kind": kind, "text": HOSTILE, "blocked": HOSTILE[:300],
+            "cost_of_waiting": HOSTILE[:300], "urgency": "high", "project_id": "general",
+            "url": BAD_URL}).raise_for_status()
+    answered = http.post("/api/asks", headers={"Authorization": f"Bearer {agent_tokens['claude']}"},
+                         json={"title": HOSTILE[:200], "kind": "question"}).json()["ask"]
+    http.post(f"/api/asks/{answered['id']}/answer", json={"resolution": "answered", "note": HOSTILE}).raise_for_status()
     profile = tmp_path_factory.mktemp("profile")
     yield {"base": base, "http": http, "profile": profile,
            "pages": {"home": "#/", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
                      "task": f"#/tasks/{task['id']}", "decision": f"#/decisions/{dec['id']}", "resolved": f"#/decisions/{done['id']}",
-                     "activity": "#/activity", "review": "#/review"}, "record": record, "review_md": review_md}
+                     "activity": "#/activity", "review": "#/review", "inbox": "#/inbox"}, "record": record, "review_md": review_md}
     server.should_exit = True
     thread.join(timeout=10)
     app.state.ws.close()
@@ -170,7 +179,7 @@ def inspect(html):
     return dom
 
 
-@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review"])
+@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox"])
 def test_hostile_text_stays_inert(site, name):
     html = dump(site, site["pages"][name])
     dom = inspect(html)
