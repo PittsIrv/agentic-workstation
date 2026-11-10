@@ -337,7 +337,7 @@ async function renderTime() {
     $("#view").innerHTML = `<div class="card"><div class="t">${esc(label)}</div><p>${esc(t.message)}</p></div>`;
     return;
   }
-  const max = Math.max(1, ...t.days.map(d => d.seconds || 0));
+  const max = Math.max(1, ...t.days.map(d => Math.max(d.seconds || 0, PURPOSES.reduce((a, p) => a + (d.by_purpose ? d.by_purpose[p] : 0), 0))));
   const bars = t.days.map(d => d.recorded
     ? `<div class="bar"><span>${esc(d.date)}</span><div class="track" title="${esc(PURPOSES.map(p => p + " " + hm(d.by_purpose[p])).join(", "))}">${PURPOSES.map(p => d.by_purpose[p] ? `<span class="p-${p}" style="width:${(d.by_purpose[p] / max * 100).toFixed(2)}%"></span>` : "").join("")}</div><span>${esc(hm(d.seconds))}</span></div>`
     : `<div class="bar"><span>${esc(d.date)}</span><span class="note">not recorded${d.date === t.end ? " yet (Daybook records finished days)" : ""}</span><span></span></div>`).join("");

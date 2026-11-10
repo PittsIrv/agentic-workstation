@@ -88,12 +88,14 @@ class Daybook:
         self._fetch = fetch or self._http
 
     def _http(self, path: str):
-        with httpx.Client(timeout=self.timeout, follow_redirects=False) as c:
-            r = c.get(self.url + path)
+        with httpx.Client(timeout=self.timeout, follow_redirects=False) as c, c.stream("GET", self.url + path) as r:
             r.raise_for_status()
-            if len(r.content) > MAX_BODY:
-                raise ValueError("response too large")
-            return json.loads(r.content)
+            body = b""
+            for chunk in r.iter_bytes():  # stop reading at the cap: a wrong port must not fill memory
+                body += chunk
+                if len(body) > MAX_BODY:
+                    raise ValueError("response too large")
+            return json.loads(body)
 
     def read(self, start: date, end: date) -> TimeResult:
         try:
@@ -118,7 +120,7 @@ class Daybook:
                 continue
             scope, day = d.get("device_scope"), d.get("date")
             try:
-                date.fromisoformat(day)
+                day = date.fromisoformat(day).isoformat()  # canonical YYYY-MM-DD, so string order is date order
             except (TypeError, ValueError):
                 continue
             total = _num(d.get("total_seconds"))

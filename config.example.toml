@@ -24,7 +24,8 @@ max_open_per_agent = 20
 # nothing is stored. The address must be loopback (127.0.0.1, localhost or [::1]).
 source = "daybook"
 daybook_url = "http://127.0.0.1:8765"
-# Which Daybook device scope to show. Empty: the scope with the latest recorded day.
+# Which Daybook device scope to show, by the id Daybook uses (for example "all_devices"). Empty: the scope with the
+# latest recorded day. A name Daybook does not have falls back to that default, with a note on the Time page.
 daybook_scope = ""
 
 [agents.claude]

@@ -132,3 +132,18 @@ def test_nothing_is_written_to_the_event_log(ws):
     before = len(app.state.ws.store.state.events)
     c.get("/api/time", headers=H(tokens)).raise_for_status()
     assert len(app.state.ws.store.state.events) == before
+
+
+def test_a_response_over_the_size_cap_is_refused_while_reading(monkeypatch):
+    monkeypatch.setattr(ts, "MAX_BODY", 1000)
+
+    def handler(request):
+        return httpx.Response(200, content=b"x" * 5000)
+    real = httpx.Client
+    monkeypatch.setattr(ts.httpx, "Client", lambda **kw: real(transport=httpx.MockTransport(handler), **kw))
+    assert ts.window(ts.Daybook(), END)["state"] == "unreadable"
+
+
+def test_non_canonical_dates_sort_by_date_not_by_text():
+    w = read([day("20261101", 60), day("2026-11-09", 90)])
+    assert w["latest_recorded"] == "2026-11-09"
