@@ -60,7 +60,7 @@ def main(argv=None) -> None:
     s.add_argument("--cost", default="", help="what it costs if this waits")
     s.add_argument("--urgency", default="normal", choices=["low", "normal", "high"])
     s.add_argument("--project", default=None); s.add_argument("--task", default=None); s.add_argument("--url", default=None)
-    s.add_argument("--due", default=None, help="ISO 8601 deadline"); s.add_argument("--due-tz", default=None)
+    s.add_argument("--due", default=None, help="ISO 8601 deadline with a UTC offset (2026-11-12T17:00:00-05:00), or without one plus --due-tz"); s.add_argument("--due-tz", default=None)
     s.add_argument("--key", default=None, help="idempotency key: resubmitting with it returns the same item")
     s = sub.add_parser("asks", help="items submitted for the owner and their answers")
     s.add_argument("--as", dest="who", default=None); s.add_argument("--status", default="open", choices=["open", "closed", "all"])

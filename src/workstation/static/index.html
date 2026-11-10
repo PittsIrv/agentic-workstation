@@ -311,6 +311,7 @@ function inboxItem(e) {
 }
 async function renderInbox() {
   const ib = await api("/api/inbox");
+  const cnt = $("#inboxcnt"); cnt.textContent = ib.items.length; cnt.classList.toggle("ask", ib.items.length > 0);
   $("#sub").textContent = "Everything an agent is waiting on you for, most urgent first: overdue, then high, normal, low; then the earliest deadline, then the longest wait.";
   const done = ib.answered.map(a => `<tr><td>${who(a.asked_by)}</td><td>${esc(a.title)}</td><td>${esc(a.resolution || a.status)}${a.note ? ": " + esc(a.note) : ""}</td><td>${esc(fmt(a.closed_at))}</td></tr>`).join("");
   $("#view").innerHTML = `<section><h2>Needs you <span class="cnt">${ib.items.length}</span></h2>
@@ -339,7 +340,7 @@ async function route(force) {
     else if (parts[0] === "review") await renderReview(parts[1]);
     else if (parts[0] === "inbox") await renderInbox();
     $("#offline").classList.add("hidden");
-    updateInboxCount();
+    if (parts[0] !== "inbox") updateInboxCount();
   } catch (e) { if (e.message !== "signed out") { $("#offline").textContent = "Could not load: " + e.message; $("#offline").classList.remove("hidden"); } }
   finally { busy = false; }
   if (again) { again = false; await route(); }  // the hash changed while rendering
