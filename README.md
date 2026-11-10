@@ -14,11 +14,13 @@ It runs on your machine, stores everything in one SQLite file, and uses the Clau
 
 ## What you get
 
-- **Home:** your next action, the most urgent decision, agent status, and an honest list of which sources are connected.
+- **Home:** one screen, top to bottom: what needs you now (answer in place), where your time went, what each agent is working on and waiting for, and a place for spend. Tasks, threads and projects follow. A new install opens with a **Get started** strip.
+- **One navigation:** Home, Inbox, Decisions, Tasks, Threads, Review, Time, Activity, Set up. The same row and buttons answer an inbox item, a decision or a task in review, on Home or on its own page.
 - **Threads:** `@claude` and `@gpt` mentions. Each reply shows which posts the agent saw. One critique round per thread, and a budget of agent turns.
 - **Decision cards:** options with each agent's position. Near-duplicate options from the agents are merged and show both sources. Only the owner can approve, reject or defer. An approval creates one engineering task. The resolved card exports as a [decision record](#decision-records) for your repo.
 - **Tasks:** owner, due date with time zone, linked artifacts (commits verified with `git cat-file`), reviews and a full history. Agents cannot mark work done.
 - **Inbox:** agents submit "this needs you" items (a decision, a review, an approval or a question) with what is blocked and what waiting costs; you see them with pending decisions and tasks to review in one list, most urgent first, and answer in place ([Inbox](#inbox)).
+- **Time:** where your time went in the last seven days, read from [Daybook](https://github.com/PittsIrv/daybook) on your computer when it is running; says "not connected" and how to connect when it is not ([Time](#time)).
 - **Event intake:** other assistants or scripts report tasks, blocks and decisions through one authenticated endpoint, with idempotent delivery ([docs/events.md](docs/events.md)).
 - **Tickets:** open tickets from a Markdown file you point it at, shown on Home.
 - **Weekly review:** one page for the last seven days, as a [review](#weekly-review) you can export to Markdown.
@@ -64,6 +66,10 @@ With `uv run ws serve --fake` running and signed in (no agent CLIs needed):
    ```
    A task must be `in_progress` before `needs_review`, and `needs_review` needs a linked artifact. Then **Accept** it under **Tasks**.
 
+## First run
+
+On a fresh install Home opens with **Get started**: (1) **Create token** for Claude and GPT (a file in `data/secrets/`; it can submit items, not answer them), (2) copy the instructions for Codex or Claude Code, already filled in with this install's folders, (3) run the one test command shown and watch the page notice the first item. The same steps stay under **Set up**. Needs a source checkout for the ready-made texts.
+
 ## Inbox
 
 Open **Inbox** in the header. It lists everything an agent is waiting on you for: items agents submit, decisions still pending, and tasks in review or blocked. Order: overdue, then high, normal, low urgency, then the earliest deadline, then the longest wait. Answer an item in place: approvals take Approve, Decline or Dismiss (each asks you to confirm); other items take a written answer or Dismiss. The agent reads the outcome later.
@@ -81,6 +87,22 @@ uv run ws withdraw <ask-id> --as claude        # take back an item
 The same through the API: `POST /api/asks` (`title`, `kind`, `text`, `blocked`, `cost_of_waiting`, `urgency`, `project_id`, `task_id`, `url`, `due_at`/`due_tz`, `idempotency_key`), `GET /api/asks` (your own, or all for the owner), `GET /api/inbox` and `POST /api/asks/<id>/answer` (owner only). The `ask_created` event type works on `POST /api/events` ([docs/events.md](docs/events.md)). Defaults, all yours to change: title up to 200 characters, details 2000, blocked and cost 300, and 20 open items per agent (`[inbox] max_open_per_agent`). Text is shown as plain text and the agent's cost-of-waiting line is labelled as the agent's own words. An agent cannot answer its own items.
 
 Ready-to-copy instructions that teach Codex and Claude Code to submit items are in [docs/agent-instructions/](docs/agent-instructions/). The plan for time tracking and reminders is in [docs/unified-workspace.md](docs/unified-workspace.md).
+
+## Time
+
+Open **Time** in the header for the seven days ending today: a bar per day split into Focus, Entertainment, Other and Untagged, the week's total over the days that were recorded, and the latest recorded day. It reads [Daybook](https://github.com/PittsIrv/daybook), a separate local Screen Time collector for Mac, through Daybook's own loopback page (`http://127.0.0.1:8765/api/data`) each time you open the page. Only day totals and the purpose split are taken; app names and calendar titles are discarded. Nothing is stored here: no time data enters the database or the repository. This program asks for no macOS permission.
+
+- **Not connected:** if Daybook is not running (or not installed), the page says so and how to connect: install it, run `python3 dashboard/launch.py` in its folder, keep it running. If you changed its port, set `[time] daybook_url` in `data/config.toml`. Only `http://127.0.0.1:<port>` style addresses are accepted. `[time] source = "off"` switches the panel off.
+- **Missing days are unknown, not zero.** Daybook records finished days, so today is normally missing until tomorrow morning. Totals cover recorded days only.
+- **One scope at a time:** Daybook can hold several device scopes that may measure the same use, so they are never added together. The page shows the scope with the latest recorded day; set `[time] daybook_scope` to choose.
+- **Focus is a label you gave an app in Daybook, not measured productivity.**
+
+```bash
+uv run ws time                 # the same data as JSON, owner only
+uv run ws time --end 2026-11-08
+```
+
+`GET /api/time?end=YYYY-MM-DD` is owner only. Other sources can be added by implementing the small `TimeSource` interface in `src/workstation/timesources.py` (`read(start, end)` returning day totals).
 
 ## Decision records
 
@@ -271,6 +293,7 @@ The source is in `src/workstation`:
 - `config.py`: settings
 - `tickets.py`: read-only Markdown ticket file
 - `inbox.py`: the owner's inbox and its ordering
+- `timesources.py`: the `TimeSource` interface and the Daybook reader
 - `static/index.html`: the dashboard
 
 ## Status

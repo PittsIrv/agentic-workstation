@@ -52,6 +52,8 @@ def main(argv=None) -> None:
     s = sub.add_parser("backup"); s.add_argument("path", nargs="?")
     s = sub.add_parser("project"); s.add_argument("id"); s.add_argument("name"); s.add_argument("--goal", default="")
     s.add_argument("--stage", default=""); s.add_argument("--milestone", default="")
+    s = sub.add_parser("time", help="owner: where the last seven days went (read from Daybook)")
+    s.add_argument("--end", default=None, help="last day, YYYY-MM-DD (default today)"); s.add_argument("--as", dest="who", default=None)
     s = sub.add_parser("ask", help="submit an item that needs the owner (an agent command)")
     s.add_argument("title"); s.add_argument("--as", dest="who", default=None)
     s.add_argument("--kind", default="question", choices=["decision", "review", "approval", "question"])
@@ -102,12 +104,9 @@ def main(argv=None) -> None:
         uvicorn.run(create_app(data_dir(args), runners), host="127.0.0.1",
                     port=args.port or int(os.environ.get("PORT", 0)) or args.cfg.port, log_level="warning")
     elif args.cmd == "token":
-        from .principals import Tokens
+        from .principals import Tokens, write_token_file
         d = data_dir(args)
-        tok = Tokens(d / "tokens.json").issue(args.principal)
-        f = d / "secrets" / f"{args.principal}.token"
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(tok); f.chmod(0o600)
+        f = write_token_file(Tokens(d / "tokens.json"), d, args.principal)
         print(f"token for {args.principal} written to {f} (previous one revoked)")
     elif args.cmd == "open":
         r = client(args, owner()).post("/api/login-codes")
@@ -174,6 +173,8 @@ def main(argv=None) -> None:
         if args.status or args.note:
             changes = {k: v for k, v in {"status": args.status, "note": args.note}.items() if v}
             out(c.patch(f"/api/tasks/{args.task_id}", json={"changes": changes}))
+    elif args.cmd == "time":
+        out(client(args, args.who).get("/api/time", params={"end": args.end} if args.end else None))
     elif args.cmd == "ask":
         body = {"title": args.title, "kind": args.kind, "text": sys.stdin.read() if args.text == "-" else args.text,
                 "blocked": args.blocked, "cost_of_waiting": args.cost, "urgency": args.urgency,

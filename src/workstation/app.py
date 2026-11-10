@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import fcntl
 import secrets
+import shlex
 import threading
 import time
 from datetime import date, datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +22,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
 from . import inbox as inbox_view
+from . import timesources
 from . import views
 from . import config as configuration
-from .principals import AGENTS, Tokens, can, configure_owner, is_human
+from .principals import AGENTS, Tokens, can, configure_owner, is_human, write_token_file
 from . import review as weekly
 from .export import decision_record
 from .principals import owner as owner_id
@@ -173,6 +176,8 @@ class Workstation:
         self.tokens = Tokens(self.data / "tokens.json")
         self.dispatcher: Dispatcher | None = None
         self.svc = Service(self.store, on_dispatch=lambda d: self.dispatcher and self.dispatcher.submit(d))
+        self.time_source = (timesources.Daybook(self.config.daybook_url, self.config.daybook_scope)
+                            if self.config.time_source == "daybook" else timesources.Off())
         self.svc.max_open_asks = self.config.inbox_max_open_per_agent
         if runners is None:
             runners = default_runners(self.config.claude_model, self.config.gpt_model, self.config.gpt_effort)
@@ -310,7 +315,8 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     def home(_: str = Depends(owner)):
         agents = ws.dispatcher.status()
         with ws.store.lock:
-            return views.home(ws.svc, agents)
+            return {**views.home(ws.svc, agents), "agent_work": inbox_view.agent_work(ws.svc),
+                    "first_item": bool(ws.store.state.asks)}
 
     @app.get("/api/threads/{thread_id}")
     def thread(thread_id: str, who: str = Depends(principal)):
@@ -438,7 +444,57 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
             d["idempotency_key"] = f"{who}:{d['idempotency_key']}"
         return views.task_card(ws.svc, ws.svc.record_review(who, task_id, **d))
 
+    # ---- time: where the owner's time went (read at request time from a local source, never stored) ----
+
+    @app.get("/api/time")
+    def time_panel(end: str | None = None, _: str = Depends(owner)):
+        """The seven days ending on `end` (default today in the display time zone). Owner only: it is the owner's own data."""
+        try:
+            day = date.fromisoformat(end) if end else datetime.now(ZoneInfo(views.DISPLAY_TZ)).date()
+        except ValueError:
+            raise Invalid("end must be a date like 2026-11-08") from None
+        return timesources.window(ws.time_source, day)
+
     # ---- inbox: items agents submit for the owner ------------------------------------------
+
+    # ---- first run: tokens for agents and the instructions to give them ----------------------------
+
+    ROOT = Path(__file__).resolve().parents[2]
+    SNIPPETS = {"codex": ("AGENTS.snippet.md", "AGENTS.md of a project, or ~/.codex/AGENTS.md"),
+                "claude_md": ("CLAUDE.snippet.md", "CLAUDE.md of a project"),
+                "claude_skill": ("claude-code-skill/SKILL.md", "~/.claude/skills/ask-the-person/SKILL.md")}
+    SETUP_AGENTS = ("claude", "gpt")
+
+    @app.get("/api/setup")
+    def setup(_: str = Depends(owner)):
+        """What the first-run screen needs: which agents have a token, whether any item has arrived, and the copy-ready
+        instructions with this install's folders filled in. Nothing secret: only whether a token file exists."""
+        docs = ROOT / "docs" / "agent-instructions"
+        data = str(ws.data.resolve())
+        q = shlex.quote  # folders with spaces must survive being pasted into a shell
+        fill = lambda text: text.replace("WORKSTATION_DIR/data", q(data)).replace("WORKSTATION_DIR", q(str(ROOT)))
+        snippets = {}
+        for key, (name, into) in SNIPPETS.items():
+            f = docs / name
+            snippets[key] = {"into": into, "text": fill(f.read_text()) if f.exists() else None}
+        with ws.store.lock:
+            asks = list(ws.store.state.asks.values())
+        base = f"uv --directory {q(str(ROOT))} run ws --data {q(data)}"
+        return {
+            "agents": [{"id": a, "display": AGENTS[a]["display"], "has_token": (ws.data / "secrets" / f"{a}.token").exists(),
+                        "submitted": sum(x["asked_by"] == a for x in asks)} for a in SETUP_AGENTS],
+            "first_item": bool(asks), "snippets": snippets,
+            "test_command": f'{base} ask "My first item" --as claude --kind question --text "Does this reach my inbox?"',
+            "workstation_dir": str(ROOT), "data_dir": data, "is_checkout": (ROOT / "pyproject.toml").exists(),
+            "coverage": [{"source": c["source"], "state": c["state"]} for c in views.COVERAGE]}
+
+    @app.post("/api/setup/token/{agent}")
+    def setup_token(agent: str, who: str = Depends(owner)):
+        """Create (or replace) an agent's token file in this install's data folder. The token is not returned."""
+        if agent not in SETUP_AGENTS:
+            raise NotFound(f"agent {agent}")
+        write_token_file(ws.tokens, ws.data, agent)
+        return {"agent": agent, "has_token": True}
 
     @app.post("/api/asks")
     def new_ask(body: AskIn, who: str = Depends(principal)):

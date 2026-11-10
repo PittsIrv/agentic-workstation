@@ -256,3 +256,75 @@ def test_the_cli_submits_lists_answers_and_withdraws(ws, monkeypatch, capsys, tm
     assert run("asks", "--as", "claude", "--status", "closed")[0]["note"] == "go"
     other = run("ask", "Third", "--as", "claude")["ask"]["id"]
     assert run("withdraw", other, "--as", "claude")["status"] == "withdrawn"
+
+
+# ---- the unified front end's data: in-place answering, agent work, first run ----
+
+def test_inbox_entries_carry_what_the_page_needs_to_answer_in_place(ws):
+    app, c, tokens = ws
+    c.post("/api/decisions", headers=H(tokens, "claude"), json={
+        "question": "Which database?", "options": [{"label": "a"}, {"label": "b"}], "project_id": "workstation"}).raise_for_status()
+    t = c.post("/api/tasks", headers=H(tokens, "claude"), json={"title": "Ship it", "project_id": "workstation",
+                                                                 "owner": "claude", "status": "in_progress"}).json()["task"]
+    c.post(f"/api/tasks/{t['id']}/artifacts", headers=H(tokens, "claude"),
+           json={"kind": "doc", "title": "d", "url": "https://example.com/d"}).raise_for_status()
+    c.patch(f"/api/tasks/{t['id']}", headers=H(tokens, "claude"), json={"changes": {"status": "needs_review"}}).raise_for_status()
+    items = {i["source"]: i for i in c.get("/api/inbox", headers=H(tokens)).json()["items"]}
+    assert [o["label"] for o in items["decision"]["decision"]["options"]] == ["a", "b"]
+    assert items["task"]["task"]["version"] and items["task"]["task"]["status"] == "needs_review"
+
+
+def test_home_reports_what_each_agent_waits_on_and_works_on(ws):
+    app, c, tokens = ws
+    ask(c, tokens, "claude").raise_for_status()
+    c.post("/api/tasks", headers=H(tokens, "claude"), json={"title": "Build the thing", "project_id": "workstation",
+                                                             "owner": "claude", "status": "in_progress"}).raise_for_status()
+    home = c.get("/api/home", headers=H(tokens)).json()
+    work = {w["id"]: w for w in home["agent_work"]}
+    assert work["claude"]["waiting_on_owner"] == 1 and work["claude"]["working_on"][0]["title"] == "Build the thing"
+    assert work["gpt"]["waiting_on_owner"] == 0 and work["gpt"]["working_count"] == 0
+    assert "owner" not in work and "system" not in work
+    assert home["first_item"] is True
+
+
+def test_first_run_state_and_token_creation(tmp_path, agents):
+    app, c, tokens = make(tmp_path, agents)
+    for who in ("claude", "gpt"):  # make() issued tokens for the tests; remove the files so this is a clean install
+        (tmp_path / "secrets" / f"{who}.token").unlink(missing_ok=True)
+    s = c.get("/api/setup", headers=H(tokens)).json()
+    assert s["first_item"] is False and [a["has_token"] for a in s["agents"]] == [False, False]
+    assert c.get("/api/home", headers=H(tokens)).json()["first_item"] is False
+    for key in ("codex", "claude_skill", "claude_md"):
+        text = s["snippets"][key]["text"]
+        assert text and "WORKSTATION_DIR" not in text and "ws --data" in text
+    assert "ask" in s["test_command"] and "--as claude" in s["test_command"]
+    r = c.post("/api/setup/token/claude", headers=H(tokens))
+    assert r.status_code == 200 and "token" not in json.dumps(r.json()).replace("has_token", "")
+    token = (tmp_path / "secrets" / "claude.token").read_text()
+    assert oct((tmp_path / "secrets" / "claude.token").stat().st_mode)[-3:] == "600"
+    assert c.post("/api/asks", headers={"Authorization": f"Bearer {token}"}, json={"title": "first"}).status_code == 200
+    s = c.get("/api/setup", headers=H(tokens)).json()
+    assert s["first_item"] is True and s["agents"][0]["has_token"] and s["agents"][0]["submitted"] == 1
+    assert token not in json.dumps(s)
+    # replacing revokes the old token
+    assert c.post("/api/setup/token/claude", headers=H(tokens)).status_code == 200
+    assert c.post("/api/asks", headers={"Authorization": f"Bearer {token}"}, json={"title": "old"}).status_code == 401
+
+
+def test_setup_endpoints_are_owner_only_and_limited_to_agents(ws):
+    app, c, tokens = ws
+    for who in ("claude", "gpt", "gemini"):
+        assert c.get("/api/setup", headers=H(tokens, who)).status_code == 403
+        assert c.post("/api/setup/token/claude", headers=H(tokens, who)).status_code == 403
+    for target in ("owner", "system", "nobody"):
+        assert c.post(f"/api/setup/token/{target}", headers=H(tokens)).status_code == 404
+    assert c.get("/api/setup").status_code == 401
+
+
+def test_commands_survive_folders_with_spaces(tmp_path, agents):
+    folder = tmp_path / "my data folder"
+    folder.mkdir()
+    app, c, tokens = make(folder, agents)
+    s = c.get("/api/setup", headers=H(tokens)).json()
+    assert f"'{folder.resolve()}'" in s["test_command"] or str(folder.resolve()).replace(" ", "\\ ") in s["test_command"]
+    assert f"'{folder.resolve()}'" in s["snippets"]["codex"]["text"]

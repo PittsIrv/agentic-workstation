@@ -79,14 +79,43 @@ class Dom(HTMLParser):
 
 
 @pytest.fixture(scope="module")
-def site(tmp_path_factory):
+def fake_daybook():
+    """A stand-in for Daybook's loopback API with made-up numbers and a hostile scope name."""
+    from datetime import date, timedelta
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    day = (date.today() - timedelta(days=1)).isoformat()
+    body = {"/api/health": {"application": "daybook", "demo": False},
+            "/api/data": {"demo": False, "days": [{"date": day, "device_scope": HOSTILE[:80], "complete": True,
+                                                   "total_seconds": 7200, "purpose_seconds": {
+                                                       "Focus": 3600, "Entertainment": 1800, "Other": 1800, "Untagged": 0}}]}}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            out = json.dumps(body.get(self.path, {})).encode()
+            self.send_response(200 if self.path in body else 404)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+
+        def log_message(self, *a):
+            pass
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{srv.server_address[1]}"
+    srv.shutdown()
+
+
+@pytest.fixture(scope="module")
+def site(tmp_path_factory, fake_daybook):
     data = tmp_path_factory.mktemp("data")
     tickets = data / "tickets.md"
     tickets.write_text(f"## T-0001 · {HOSTILE}\n- status: open\n- priority: P1\n- repo: {HOSTILE}\n")
     esc = lambda s: json.dumps(s)  # TOML basic strings share JSON's escaping
     (data / "config.toml").write_text(
         f"[owner]\nname = {esc(HOSTILE)}\n[tickets]\npath = {esc(str(tickets))}\ntitle = {esc(HOSTILE)}\n"
-        f"[[coverage]]\nsource = {esc(HOSTILE)}\nstate = {esc(HOSTILE)}\n")
+        f"[[coverage]]\nsource = {esc(HOSTILE)}\nstate = {esc(HOSTILE)}\n"
+        f"[time]\ndaybook_url = {esc(fake_daybook)}\ndaybook_scope = {esc(HOSTILE)}\n")
     reply = (f"{HOSTILE}\n```json\n" + json.dumps({
         "position": HOSTILE, "options": [HOSTILE, "Safe option"], "verdict": "comment",
         "proposed_tasks": [{"title": HOSTILE, "owner": "claude"}]}) + "\n```")
@@ -138,6 +167,13 @@ def site(tmp_path_factory):
         http.patch(f"/api/tasks/{task['id']}", json={"expected_version": http.get(f"/api/tasks/{task['id']}").json()["version"],
                                                      "changes": {"status": status}}).raise_for_status()
     review_md = http.get("/api/review/record").json()["markdown"]
+    # agent text on Home's new sections: an agent's task in progress, and one waiting for the owner's review
+    mine = http.post("/api/tasks", json={"title": HOSTILE, "project_id": "general", "owner": "claude", "status": "in_progress",
+                                          "next_action": HOSTILE}).json()["task"]
+    rev = http.post("/api/tasks", json={"title": HOSTILE, "project_id": "general", "owner": "claude", "status": "in_progress",
+                                         "next_action": HOSTILE, "why": HOSTILE}).json()["task"]
+    http.post(f"/api/tasks/{rev['id']}/artifacts", json={"kind": "doc", "title": HOSTILE, "url": BAD_URL}).raise_for_status()
+    http.patch(f"/api/tasks/{rev['id']}", json={"changes": {"status": "needs_review"}}).raise_for_status()
     agent_tokens = {a: app.state.ws.tokens.issue(a) for a in ("claude", "gpt")}
     for agent, kind in (("claude", "approval"), ("gpt", "question")):  # items from two agents, every text field hostile
         http.post("/api/asks", headers={"Authorization": f"Bearer {agent_tokens[agent]}"}, json={
@@ -151,7 +187,7 @@ def site(tmp_path_factory):
     yield {"base": base, "http": http, "profile": profile,
            "pages": {"home": "#/", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
                      "task": f"#/tasks/{task['id']}", "decision": f"#/decisions/{dec['id']}", "resolved": f"#/decisions/{done['id']}",
-                     "activity": "#/activity", "review": "#/review", "inbox": "#/inbox"}, "record": record, "review_md": review_md}
+                     "activity": "#/activity", "review": "#/review", "inbox": "#/inbox", "time": "#/time", "decisions": "#/decisions", "setup": "#/setup"}, "record": record, "review_md": review_md}
     server.should_exit = True
     thread.join(timeout=10)
     app.state.ws.close()
@@ -179,7 +215,7 @@ def inspect(html):
     return dom
 
 
-@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox"])
+@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox", "time", "decisions", "setup"])
 def test_hostile_text_stays_inert(site, name):
     html = dump(site, site["pages"][name])
     dom = inspect(html)

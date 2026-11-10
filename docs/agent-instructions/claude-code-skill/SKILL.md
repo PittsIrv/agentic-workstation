@@ -5,8 +5,7 @@ description: Use when you are blocked on the person (a decision, a review, an ap
 
 # Ask the person
 
-Install: copy this folder to `~/.claude/skills/ask-the-person/` (or `.claude/skills/` in a project), replace
-`WORKSTATION_DIR` below with your Agentic Workstation folder, and run `uv run ws token claude` there once.
+Setup is done by the person: a token for `claude` and the workstation server running. Your identity is `claude`.
 
 Submit one item per blocker, then continue with work that does not depend on the answer:
 

@@ -3,8 +3,7 @@
 When you cannot continue without the person (a decision, a review, an approval or a question), submit an item to
 their inbox instead of stopping to ask in chat, then continue with work that does not depend on the answer.
 
-Setup (once, by the person): `uv run ws token claude` in the workstation folder, and keep `uv run ws serve` running.
-Replace `WORKSTATION_DIR` with that folder. Your identity is `claude`.
+Setup is done by the person (a token for `claude`, and the workstation server running). Your identity is `claude`.
 
 ```bash
 uv --directory WORKSTATION_DIR run ws --data WORKSTATION_DIR/data ask "Approve running the schema migration?" \

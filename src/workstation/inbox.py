@@ -13,6 +13,7 @@ from datetime import datetime
 
 from .principals import AGENTS
 from .service import Service
+from . import views
 
 RANK = {"high": 0, "normal": 1, "low": 2}
 TASK_URGENCY = {"P0": "high", "P1": "high", "P2": "normal", "P3": "low"}
@@ -61,7 +62,7 @@ def _entries(svc: Service) -> list[dict]:
                         "project_id": d.get("project_id"),
                         "project": svc.s.projects.get(d.get("project_id") or "", {}).get("name"),
                         "due_at": d.get("due_at"), "due_tz": d.get("due_tz"), "link": f"#/decisions/{d['id']}",
-                        "waiting_since": d["created_at"]})
+                        "waiting_since": d["created_at"], "decision": views.decision_card(d)})
     for t in svc.s.tasks.values():
         if t["status"] in ("needs_review", "blocked"):
             review = t["status"] == "needs_review"
@@ -72,7 +73,7 @@ def _entries(svc: Service) -> list[dict]:
                         "asked_by": t["owner"], "asked_by_display": _name(t["owner"]),
                         "project_id": t["project_id"], "project": svc.s.projects.get(t["project_id"], {}).get("name"),
                         "due_at": t.get("due_at"), "due_tz": t.get("due_tz"), "link": f"#/tasks/{t['id']}",
-                        "waiting_since": _waiting_since_status(t)})
+                        "waiting_since": _waiting_since_status(t), "task": views.task_card(svc, t)})
     return out
 
 
@@ -98,3 +99,20 @@ def asks_for(svc: Service, who: str, status: str | None) -> list[dict]:
     rows = [a for a in svc.s.asks.values() if (human or a["asked_by"] == who)
             and (not status or status == "all" or (a["status"] == "open") == (status == "open"))]
     return [ask_card(svc, a) for a in sorted(rows, key=lambda a: a["created_at"], reverse=True)]
+
+
+def agent_work(svc: Service) -> list[dict]:
+    """Per agent: what it is waiting on the owner for and what it is working on. Counts and short titles only."""
+    out = []
+    for pid, a in AGENTS.items():
+        if a["kind"] != "agent":
+            continue
+        asks = [x for x in svc.s.asks.values() if x["asked_by"] == pid and x["status"] == "open"]
+        decisions = [d for d in svc.s.decisions.values() if d["status"] == "pending" and d["created_by"] == pid]
+        reviews = [t for t in svc.s.tasks.values() if t["owner"] == pid and t["status"] == "needs_review"]
+        mine = [t for t in svc.s.tasks.values() if t["owner"] == pid and t["status"] in ("in_progress", "ready")]
+        mine.sort(key=lambda t: (t["status"] != "in_progress", t["updated_at"]), reverse=False)
+        out.append({"id": pid, "display": a["display"], "waiting_on_owner": len(asks) + len(decisions) + len(reviews),
+                    "working_on": [{"id": t["id"], "title": t["title"], "status": t["status"]} for t in mine[:3]],
+                    "working_count": len(mine)})
+    return out

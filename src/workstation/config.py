@@ -33,6 +33,9 @@ class Config:
     tickets_title: str = "Tickets"
     tickets_closed: list[str] = field(default_factory=lambda: list(DEFAULT_CLOSED))
     inbox_max_open_per_agent: int = 20  # open items one agent may have waiting on the owner
+    time_source: str = "daybook"  # daybook | off
+    daybook_url: str = "http://127.0.0.1:8765"
+    daybook_scope: str = ""
     coverage: list[dict] = field(default_factory=lambda: [dict(c) for c in DEFAULT_COVERAGE])
 
 
@@ -55,6 +58,10 @@ def load(data_dir: Path | str) -> Config:
     if "closed" in tk:
         cfg.tickets_closed = [str(x) for x in tk["closed"]]
     cfg.inbox_max_open_per_agent = raw.get("inbox", {}).get("max_open_per_agent", cfg.inbox_max_open_per_agent)
+    tm = raw.get("time", {})
+    cfg.time_source = str(tm.get("source", cfg.time_source))
+    cfg.daybook_url = str(tm.get("daybook_url", cfg.daybook_url))
+    cfg.daybook_scope = str(tm.get("daybook_scope", cfg.daybook_scope))
     if "coverage" in raw:
         cfg.coverage = [{"source": str(c["source"]), "state": str(c["state"]),
                          **({"agent": str(c["agent"])} if "agent" in c else {})} for c in raw["coverage"]]
@@ -72,5 +79,9 @@ def validate(cfg: Config, path: Path | str = "config") -> None:
     if not (isinstance(cfg.inbox_max_open_per_agent, int) and not isinstance(cfg.inbox_max_open_per_agent, bool)
             and 1 <= cfg.inbox_max_open_per_agent <= 1000):
         raise ValueError(f"{path}: inbox.max_open_per_agent must be a whole number from 1 to 1000")
+    if cfg.time_source not in ("daybook", "off"):
+        raise ValueError(f"{path}: time.source must be daybook or off")
+    from .timesources import check_loopback
+    check_loopback(cfg.daybook_url)
     if cfg.gpt_effort not in ("low", "medium", "high"):
         raise ValueError(f"{path}: agents.gpt.effort must be low, medium or high")

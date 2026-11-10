@@ -3,9 +3,8 @@
 When you cannot continue without the person (a decision, a review, an approval or a question), do not wait in the
 chat. Submit an item to their inbox and carry on with other work.
 
-Setup (once, by the person): `uv run ws token gpt` in the workstation folder, and keep `uv run ws serve` running.
-Replace `WORKSTATION_DIR` below with that folder. Your identity is `gpt`; if your sandbox cannot read
-`WORKSTATION_DIR/data/secrets/gpt.token` or reach `127.0.0.1:8770`, say so in your reply instead of retrying.
+Setup is done by the person (a token for `gpt`, and the workstation server running). Your identity is `gpt`. If your
+sandbox cannot read the token file or reach `127.0.0.1:8770`, say so in your reply instead of retrying.
 
 Submit (one item per blocker; the same `--key` never creates a second item):
 
