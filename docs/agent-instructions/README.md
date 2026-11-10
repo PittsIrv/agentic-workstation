@@ -1,6 +1,6 @@
 # Teach your agents to ask you
 
-Copy one of these into the agent's instructions, replace `WORKSTATION_DIR` with the folder you cloned, and run
+The Set up screen of the workstation shows these with your folders already filled in. To copy them from here instead, replace `WORKSTATION_DIR` with the folder you cloned, and run
 `uv run ws token <id>` there once (`gpt` for Codex, `claude` for Claude Code). Keep `uv run ws serve` running.
 
 | Agent | Copy | Into |

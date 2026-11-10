@@ -14,7 +14,8 @@ It runs on your machine, stores everything in one SQLite file, and uses the Clau
 
 ## What you get
 
-- **Home:** your next action, the most urgent decision, agent status, and an honest list of which sources are connected.
+- **Home:** one screen, top to bottom: what needs you now (answer in place), where your time went, what each agent is working on and waiting for, and a place for spend. Tasks, threads and projects follow. A new install opens with a **Get started** strip.
+- **One navigation:** Home, Inbox, Decisions, Tasks, Threads, Review, Time, Activity, Set up. The same row and buttons answer an inbox item, a decision or a task in review, on Home or on its own page.
 - **Threads:** `@claude` and `@gpt` mentions. Each reply shows which posts the agent saw. One critique round per thread, and a budget of agent turns.
 - **Decision cards:** options with each agent's position. Near-duplicate options from the agents are merged and show both sources. Only the owner can approve, reject or defer. An approval creates one engineering task. The resolved card exports as a [decision record](#decision-records) for your repo.
 - **Tasks:** owner, due date with time zone, linked artifacts (commits verified with `git cat-file`), reviews and a full history. Agents cannot mark work done.
@@ -64,6 +65,10 @@ With `uv run ws serve --fake` running and signed in (no agent CLIs needed):
    uv run ws task <task-id> --as claude --status needs_review
    ```
    A task must be `in_progress` before `needs_review`, and `needs_review` needs a linked artifact. Then **Accept** it under **Tasks**.
+
+## First run
+
+On a fresh install Home opens with **Get started**: (1) **Create token** for Claude and GPT (a file in `data/secrets/`; it can submit items, not answer them), (2) copy the instructions for Codex or Claude Code, already filled in with this install's folders, (3) run the one test command shown and watch the page notice the first item. The same steps stay under **Set up**. Needs a source checkout for the ready-made texts.
 
 ## Inbox
 

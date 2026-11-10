@@ -104,12 +104,9 @@ def main(argv=None) -> None:
         uvicorn.run(create_app(data_dir(args), runners), host="127.0.0.1",
                     port=args.port or int(os.environ.get("PORT", 0)) or args.cfg.port, log_level="warning")
     elif args.cmd == "token":
-        from .principals import Tokens
+        from .principals import Tokens, write_token_file
         d = data_dir(args)
-        tok = Tokens(d / "tokens.json").issue(args.principal)
-        f = d / "secrets" / f"{args.principal}.token"
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(tok); f.chmod(0o600)
+        f = write_token_file(Tokens(d / "tokens.json"), d, args.principal)
         print(f"token for {args.principal} written to {f} (previous one revoked)")
     elif args.cmd == "open":
         r = client(args, owner()).post("/api/login-codes")

@@ -53,6 +53,13 @@ table{width:100%;border-collapse:collapse;font-size:13.5px} th,td{text-align:lef
 .err{color:var(--bad);font-size:13px}
 .note{font-size:12.5px;color:var(--mute);margin-top:3px}
 .hidden{display:none}
+.two{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:16px;align-items:start} @media(max-width:860px){.two{grid-template-columns:1fr}}
+.wait{margin:2px 0 0} .more{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline;font-size:13.5px}
+.steps{margin:0;padding-left:20px} .steps>li{margin-bottom:14px} .steps h3{font:500 15px/1.3 var(--font);margin:0 0 4px}
+pre.cmd{font:12.5px/1.45 var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;white-space:pre-wrap;word-break:break-word;margin:6px 0;max-height:260px;overflow:auto}
+.ok-line{color:var(--ok);font-weight:500}
+.agwork{margin:2px 0 8px 14px;font-size:12.5px;color:var(--mute)}
+@media(max-width:520px){.bar{grid-template-columns:78px 1fr 60px}.row input,.row textarea{min-width:0;flex:1 1 100%}}
 .bars{display:grid;gap:8px} .bar{display:grid;grid-template-columns:92px 1fr 72px;gap:10px;align-items:center;font-size:13.5px}
 .track{display:flex;height:18px;border-radius:4px;overflow:hidden;background:var(--mid-bg)} .track span{display:block;height:100%}
 .p-Focus{background:var(--acc)} .p-Entertainment{background:var(--ask)} .p-Other{background:var(--mute)} .p-Untagged{background:var(--line)}
@@ -61,7 +68,7 @@ table{width:100%;border-collapse:collapse;font-size:13.5px} th,td{text-align:lef
 </head>
 <body>
 <div class="top"><h1>Workstation</h1>
-<nav><a href="#/" data-nav="home">Home</a><a href="#/inbox" data-nav="inbox">Inbox <span id="inboxcnt" class="pill"></span></a><a href="#/threads" data-nav="threads">Threads</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/activity" data-nav="activity">Activity</a><a href="#/time" data-nav="time">Time</a><a href="#/review" data-nav="review">Review</a></nav></div>
+<nav><a href="#/" data-nav="home">Home</a><a href="#/inbox" data-nav="inbox">Inbox <span id="inboxcnt" class="pill"></span></a><a href="#/decisions" data-nav="decisions">Decisions</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/threads" data-nav="threads">Threads</a><a href="#/review" data-nav="review">Review</a><a href="#/time" data-nav="time">Time</a><a href="#/activity" data-nav="activity">Activity</a><a href="#/setup" data-nav="setup">Set up</a></nav></div>
 <div class="sub" id="sub">Loading…</div>
 <div id="offline" class="banner hidden" role="status"></div>
 <main id="view"></main>
@@ -105,10 +112,10 @@ const pill = (s, cls) => `<span class="pill ${cls ?? STATUS_PILL[s] ?? ""}">${es
 
 // ---------- Home ----------
 const BUCKETS = [["overdue", "Overdue"], ["today", "Today"], ["this_week", "Next 7 days"], ["undated", "No date"], ["later", "Later"]];
-function taskCard(t) {
+function taskCard(t, extra = "") {
   const src = t.provenance?.confidence ? `${t.source_system} · ${t.provenance.confidence.replace(/_/g, " ")}` : t.source_system;
   return `<div class="card"><div class="row" style="margin:0;justify-content:space-between"><a class="t" href="#/tasks/${esc(t.id)}">${esc(t.title)}</a><span>${t.reviews.length ? pill(NAMES[t.reviews.at(-1).by] + ": " + t.reviews.at(-1).verdict, t.reviews.at(-1).verdict === "approve" ? "ok" : "ask") + " " : ""}${pill(t.status)}</span></div>
-  <div style="font-size:14px;margin-top:2px">→ ${esc(t.action)}</div>
+  ${extra}<div style="font-size:14px;margin-top:2px">→ ${esc(t.action)}</div>
   <div class="meta"><span>${esc(t.project)}</span><span>owner ${who(t.owner)}</span>${t.due_local ? `<span>due ${esc(t.due_local)}</span>` : ""}<span>from ${who(t.created_by)} via ${esc(src)}</span>${t.thread_id ? `<a href="#/threads/${esc(t.thread_id)}">thread</a>` : ""}${t.artifacts.length ? `<span>${t.artifacts.length} artifact(s)</span>` : ""}</div>
   ${t.why ? `<div class="meta">Why: ${esc(t.why)}</div>` : ""}
   <div class="row">${quickActions(t)}</div></div>`;
@@ -120,11 +127,11 @@ function quickActions(t) {
   if (t.owner !== OWNER) return "";
   return (t.status !== "in_progress" ? b("in_progress", "Start") : "") + b("done", "Done", true) + b("canceled", "Dismiss");
 }
-function decisionCard(d, full) {
+function decisionCard(d, full, extra = "") {
   const recs = (d.recommendations || []).map(r => `<div>${who(r.agent)}${r.mode === "critique" ? " (after critique)" : ""}: ${esc(r.summary)}${r.message_id && d.thread_id ? ` <a href="#/threads/${esc(d.thread_id)}">source</a>` : ""}</div>`).join("");
   const opts = d.options.map(o => `<div class="opt"><span>${esc(o.label)}${o.detail ? `<br><small class="meta">${esc(o.detail)}</small>` : ""}</span>${d.status === "pending" ? `<button class="primary" data-approve="${esc(d.id)}" data-o="${esc(o.id)}" data-label="${esc(o.label)}">Approve</button>` : (d.option_id === o.id ? pill("chosen", "ok") : "")}</div>`).join("");
   return `<div class="card dc"><div class="row" style="margin:0;justify-content:space-between"><span class="k" style="margin:0">${esc(d.urgency === "high" ? "Urgent decision" : "Decision")} · by ${esc(NAMES[d.created_by] || d.created_by)} · ${esc(fmt(d.created_at))}</span>${pill(d.status, d.status === "pending" ? "ask" : d.status === "approved" ? "ok" : "")}</div>
-  <div class="q">${esc(d.question)}</div>${d.context ? `<div class="ctx">${esc(d.context)}</div>` : ""}
+  ${extra}<div class="q">${esc(d.question)}</div>${d.context ? `<div class="ctx">${esc(d.context)}</div>` : ""}
   ${recs ? `<div class="recs"><span class="k">Positions</span>${recs}</div>` : ""}${opts}
   ${(d.evidence || []).length ? `<div class="meta">Evidence: ${d.evidence.map(e => link(e.url, e.label)).join(" · ")}</div>` : ""}
   ${d.status === "pending" ? `<div class="row"><input class="dnote" placeholder="Reason (optional)"><input class="drev" placeholder="Revisit when (optional)"></div><div class="row"><button data-resolve="${esc(d.id)}" data-s="deferred">Defer</button><button data-resolve="${esc(d.id)}" data-s="rejected">Reject all</button><span class="note">Only you can resolve this. Approving assigns ${who(d.follow_up_owner)} an engineering task.</span></div>`
@@ -138,32 +145,46 @@ function agentRows(agents) {
     ${!a.available || a.last_failure ? `<small class="meta" style="margin:-2px 0 4px 14px">${esc(a.available ? "last failure: " + (a.last_failure || "") : a.reason)}</small>` : ""}`;
   }).join("");
 }
+const waited = sec => sec < 90 ? "just now" : sec < 5400 ? Math.round(sec / 60) + " min" : sec < 172800 ? Math.round(sec / 3600) + " h" : Math.round(sec / 86400) + " d";
+const CUT = 5;
+function agentsSection(h) {
+  const work = Object.fromEntries((h.agent_work || []).map(w => [w.id, w]));
+  return h.agents.map(a => {
+    const w = work[a.id];
+    const lines = w ? [w.waiting_on_owner ? `Waiting on you: ${w.waiting_on_owner}` : "", w.working_count ? "Working on: " + w.working_on.map(t => `<a href="#/tasks/${esc(t.id)}">${esc(t.title)}</a>`).join(", ") + (w.working_count > w.working_on.length ? ` and ${w.working_count - w.working_on.length} more` : "") : ""].filter(Boolean) : [];
+    return agentRows([a]) + (lines.length ? `<div class="agwork">${lines.join(" · ")}</div>` : "");
+  }).join("");
+}
 async function renderHome() {
-  const h = await api("/api/home");
-  $("#sub").textContent = `${new Date(h.now).toLocaleString([], {weekday: "long", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"})} · ${h.tz} · shows only what agents and you recorded here`;
-  const next = h.next, dec = h.decisions[0];
+  const [h, ib] = await Promise.all([api("/api/home"), api("/api/inbox")]);
+  $("#sub").textContent = `${new Date(h.now).toLocaleString([], {weekday: "long", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"})} · ${h.tz}`;
+  const mine = h.actions.filter(t => t.status !== "needs_review" && t.status !== "blocked");
   let groups = "";
   for (const [b, label] of BUCKETS) {
-    const ts = h.actions.filter(t => t.bucket === b);
-    if (ts.length) groups += `<div class="bucket ${b}">${label} · ${ts.length}</div>` + ts.map(taskCard).join("");
+    const ts = mine.filter(t => t.bucket === b);
+    if (ts.length) groups += `<div class="bucket ${b}">${label} · ${ts.length}</div>` + ts.map(t => taskCard(t)).join("");
   }
+  const setup = h.first_item ? "" : await api("/api/setup");
   $("#view").innerHTML = `
-  <div class="strip">
-    <div class="tile"><span class="k">Your next action</span>${next ? `<a class="big" href="#/${next.kind === "decision" ? "decisions" : "tasks"}/${esc(next.id)}">${esc(next.text)}</a><div class="meta">${next.kind === "decision" ? "Decision · " : ""}${esc(next.meta)}</div>` : `<span class="big">Nothing waits on you</span>`}</div>
-    <div class="tile"><span class="k">Decisions</span>${dec ? `<a class="big" href="#/decisions/${esc(dec.id)}">${h.decisions.length} pending</a><div class="meta">${h.decisions.length > 1 ? "Then: " + esc(h.decisions[1].question) : "Its card is below"}</div>` : `<span class="big">No pending decisions</span>`}</div>
-    <div class="tile"><span class="k">Agents</span><div class="agents">${agentRows(h.agents)}</div></div>
+  ${h.first_item ? "" : `<section><h2>Get started <span class="cnt">connect your first agent</span></h2>${setupPanel(setup)}</section>`}
+  <section><div class="more"><h2 style="margin:0">Needs you now <span class="cnt">${ib.items.length} waiting</span></h2>${ib.items.length > CUT ? `<a href="#/inbox">All ${ib.items.length} in the Inbox</a>` : ""}</div>
+  ${ib.items.slice(0, CUT).map(inboxRow).join("") || `<div class="card"><span class="empty">Nothing is waiting on you. When an agent needs a decision, a review or an approval, it shows up here and you answer it in place. ${h.first_item ? "" : "Finish the steps above to connect one."}</span></div>`}</section>
+  <div class="two">
+    <section id="home-time"><h2>Your time</h2><div class="card"><span class="empty">Loading…</span></div></section>
+    <section><h2>Your agents</h2><div class="card"><div class="agents">${agentsSection(h)}</div></div>
+      <h2 style="margin-top:16px">Spend</h2><div class="card"><span class="empty">Not connected. Nothing reports what your agents cost yet; when a source exists it shows here.</span></div></section>
   </div>
-  <div class="cols">
-    <section><h2>Tasks waiting on you <span class="cnt">${h.actions.length} open</span></h2>${groups || '<p class="empty">No tasks waiting on you.</p>'}
-      <details class="card"><summary>Add a task</summary>${taskForm(h.projects)}</details></section>
-    <section><h2>Decisions <span class="cnt">${h.decisions.length} pending</span></h2>${h.decisions.map(d => decisionCard(d)).join("") || '<p class="empty">No pending decisions.</p>'}
-      <h2 style="margin-top:18px">Threads <span class="cnt">${h.threads.length}</span></h2>
-      ${h.threads.slice(0, 6).map(t => `<div class="card"><a class="t" href="#/threads/${esc(t.id)}">${esc(t.title)}</a>${t.pending ? ` ${pill(t.pending + " agent(s) working", "run")}` : ""}<div class="note">${t.last ? `${who(Object.keys(NAMES).find(k => NAMES[k] === t.last.author) || "system")}: ${esc(t.last.text)}` : "No messages"} · ${esc(ago(t.updated_at))}</div></div>`).join("") || '<p class="empty">No threads yet.</p>'}
-      <a href="#/threads">All threads / start one →</a></section>
+  <section><h2>Your tasks <span class="cnt">${mine.length} open</span></h2>${groups || '<p class="empty">No tasks of yours are open. Add one below, or let an agent propose one.</p>'}
+    <details class="card"><summary>Add a task</summary>${taskForm(h.projects)}</details></section>
+  <div class="two">
+    <section><h2>Threads <span class="cnt">${h.threads.length}</span></h2>
+      ${h.threads.slice(0, 6).map(t => `<div class="card"><a class="t" href="#/threads/${esc(t.id)}">${esc(t.title)}</a>${t.pending ? ` ${pill(t.pending + " agent(s) working", "run")}` : ""}<div class="note">${t.last ? `${who(Object.keys(NAMES).find(k => NAMES[k] === t.last.author) || "system")}: ${esc(t.last.text)}` : "No messages"} · ${esc(ago(t.updated_at))}</div></div>`).join("") || '<p class="empty">No threads yet. A thread lets you ask Claude and GPT the same question and compare.</p>'}
+      <a href="#/threads">All threads / start one</a></section>
+    <section><h2>Projects</h2>${h.projects.map(p => `<div class="card"><span class="t">${esc(p.name)}</span><div class="meta">${esc(p.goal || p.stage || "")}</div><div class="meta"><span>${p.open} open</span><span>${p.blocked} blocked</span><span>${p.done} done</span></div>${p.next ? `<div class="meta">Next: ${esc(p.next.title)} (${esc(p.next.owner)})</div>` : ""}${p.last_progress ? `<div class="meta">Last change ${esc(ago(p.last_progress.at))} by ${who(p.last_progress.actor)}</div>` : ""}</div>`).join("")}</section>
   </div>
-  <section><h2>Projects</h2><div class="strip">${h.projects.map(p => `<div class="tile"><span class="k">${esc(p.stage || "project")}</span><span class="big">${esc(p.name)}</span><div class="meta">${esc(p.goal || "")}</div><div class="meta"><span>${p.open} open</span><span>${p.blocked} blocked</span><span>${p.done} done</span></div>${p.next ? `<div class="meta">Next: ${esc(p.next.title)} (${esc(p.next.owner)})</div>` : ""}${p.last_progress ? `<div class="meta">Last change ${esc(ago(p.last_progress.at))} by ${who(p.last_progress.actor)}</div>` : ""}</div>`).join("")}</div></section>
-  ${ticketsSection(h.tickets)}
-  <section><h2>What this dashboard can see</h2><div class="tile"><ul class="cov">${h.coverage.map(c => `<li>${esc(c.source)} — <b>${esc(c.state)}</b></li>`).join("")}</ul></div></section>`;
+  ${ticketsSection(h.tickets)}`;
+  api("/api/time").then(t => { const el = $("#home-time"); if (el) el.innerHTML = `<h2>Your time</h2>${timeBody(t, true)}`; })
+    .catch(e => { const el = $("#home-time"); if (el && e.message !== "signed out") el.innerHTML = `<h2>Your time</h2><div class="card"><span class="empty">Could not load: ${esc(e.message)}</span></div>`; });
 }
 function taskForm(projects) {
   return `<form id="newtask" class="row" style="flex-direction:column;align-items:stretch">
@@ -297,21 +318,24 @@ async function renderActivity() {
 
 // ---------- Inbox ----------
 const KIND = {decision: "Decision", review: "Review", approval: "Approval", question: "Question", blocked: "Blocked"};
-const waited = sec => sec < 90 ? "just now" : sec < 5400 ? Math.round(sec / 60) + " min" : sec < 172800 ? Math.round(sec / 3600) + " h" : Math.round(sec / 86400) + " d";
-function inboxItem(e) {
-  const open = e.source === "ask";
-  const who_ = who(e.asked_by);
+function askRow(e) {
   const lines = [e.blocked && `<div class="note"><b>Blocked:</b> ${esc(e.blocked)}</div>`,
                  e.cost_of_waiting && `<div class="note"><b>If it waits:</b> ${esc(e.cost_of_waiting)} <span title="Written by the agent, not checked">(agent's words)</span></div>`].filter(Boolean).join("");
   const body = e.text ? `<div class="body" style="white-space:pre-wrap;margin-top:6px">${esc(e.text)}</div>` : "";
   const ref = e.url ? ` · ${link(e.url, "link")}` : "";
-  let actions;
-  if (!open) actions = `<div class="row"><a class="btn" href="${esc(e.link)}">Open ${e.source === "decision" ? "decision card" : "task"}</a></div>`;
-  else if (e.kind === "approval") actions = `<div class="row"><input class="anote" placeholder="Note (optional)" style="flex:1;min-width:160px"><button data-ans="${esc(e.id)}" data-res="approved" data-label="approve" class="primary">Approve</button><button data-ans="${esc(e.id)}" data-res="declined" data-label="decline">Decline</button><button data-ans="${esc(e.id)}" data-res="dismissed" data-label="dismiss">Dismiss</button></div>`;
-  else actions = `<div class="row"><textarea class="anote" placeholder="Your answer" style="min-height:52px"></textarea></div><div class="row"><button data-ans="${esc(e.id)}" data-res="answered" class="primary">Answer</button><button data-ans="${esc(e.id)}" data-res="dismissed" data-label="dismiss">Dismiss</button></div>`;
-  return `<div class="card ib" data-ask="${esc(e.id)}"><div class="row" style="margin:0;justify-content:space-between"><span class="t">${esc(e.title)}</span><span>${e.overdue ? pill("overdue", "bad") + " " : ""}${e.urgency === "high" ? pill("high", "ask") + " " : e.urgency === "low" ? pill("low") + " " : ""}${pill(KIND[e.kind] || e.kind, "")}</span></div>
-  <div class="meta"><span>${who_} · ${esc(e.project || "no project")}</span><span>waiting ${esc(waited(e.waiting_s))}</span>${e.due_at ? `<span>due ${esc(fmt(e.due_at))}</span>` : ""}<span>${e.source === "ask" ? "asked by agent" : e.source}</span>${ref}</div>
+  const a = e.id;
+  const actions = e.kind === "approval"
+    ? `<div class="row"><input class="anote" placeholder="Note (optional)" style="flex:1;min-width:160px"><button data-ans="${esc(a)}" data-res="approved" data-label="approve" class="primary">Approve</button><button data-ans="${esc(a)}" data-res="declined" data-label="decline">Decline</button><button data-ans="${esc(a)}" data-res="dismissed" data-label="dismiss">Dismiss</button></div>`
+    : `<div class="row"><textarea class="anote" placeholder="Your answer" style="min-height:52px"></textarea></div><div class="row"><button data-ans="${esc(a)}" data-res="answered" class="primary">Answer</button><button data-ans="${esc(a)}" data-res="dismissed" data-label="dismiss">Dismiss</button></div>`;
+  return `<div class="card ib" data-ask="${esc(a)}"><div class="row" style="margin:0;justify-content:space-between"><span class="t">${esc(e.title)}</span><span>${e.overdue ? pill("overdue", "bad") + " " : ""}${e.urgency === "high" ? pill("high", "ask") + " " : e.urgency === "low" ? pill("low") + " " : ""}${pill(KIND[e.kind] || e.kind, "")}</span></div>
+  <div class="meta wait"><span>${who(e.asked_by)} · ${esc(e.project || "no project")}</span><span>waiting ${esc(waited(e.waiting_s))}</span>${e.due_at ? `<span>due ${esc(fmt(e.due_at))}</span>` : ""}${ref}</div>
   ${lines}${body}${actions}<div class="err"></div></div>`;
+}
+function inboxRow(e) {
+  const head = `<div class="meta wait"><span>${who(e.asked_by)} · ${esc(e.project || "no project")}</span><span>waiting ${esc(waited(e.waiting_s))}</span>${e.overdue ? pill("overdue", "bad") : ""}${e.urgency === "high" ? pill("high", "ask") : ""}</div>`;
+  if (e.source === "decision") return decisionCard(e.decision, true, head);
+  if (e.source === "task") return taskCard(e.task, head);
+  return askRow(e);
 }
 async function renderInbox() {
   const ib = await api("/api/inbox");
@@ -319,39 +343,68 @@ async function renderInbox() {
   $("#sub").textContent = "Everything an agent is waiting on you for, most urgent first: overdue, then high, normal, low; then the earliest deadline, then the longest wait.";
   const done = ib.answered.map(a => `<tr><td>${who(a.asked_by)}</td><td>${esc(a.title)}</td><td>${esc(a.resolution || a.status)}${a.note ? ": " + esc(a.note) : ""}</td><td>${esc(fmt(a.closed_at))}</td></tr>`).join("");
   $("#view").innerHTML = `<section><h2>Needs you <span class="cnt">${ib.items.length}</span></h2>
-  ${ib.items.map(inboxItem).join("") || '<p class="empty">Nothing is waiting on you. Agents submit items with <code>ws ask</code>.</p>'}</section>
+  ${ib.items.map(inboxRow).join("") || '<div class="card"><span class="empty">Nothing is waiting on you. When an agent needs a decision, a review or an approval, it shows up here. To connect an agent, open <a href="#/setup">Set up</a>.</span></div>'}</section>
   ${done ? `<section><h2>Recently answered</h2><div class="tablewrap"><table><tr><th>From</th><th>Item</th><th>Outcome</th><th>When</th></tr>${done}</table></div></section>` : ""}`;
 }
 async function updateInboxCount() {
   try { const ib = await api("/api/inbox"); const el = $("#inboxcnt"); el.textContent = ib.items.length; el.classList.toggle("ask", ib.items.length > 0); } catch (e) { /* signed out */ }
 }
 
+// ---------- Decisions ----------
+async function renderDecisions() {
+  const ds = await api("/api/decisions");
+  const open = ds.filter(d => d.status === "pending"), closed = ds.filter(d => d.status !== "pending");
+  $("#sub").textContent = "Choices where you pick the option. Only you can resolve them; an approval creates one task for the agent.";
+  $("#view").innerHTML = `<section><h2>Waiting for you <span class="cnt">${open.length}</span></h2>${open.map(d => decisionCard(d, true)).join("") || '<div class="card"><span class="empty">No decisions are waiting. Agents propose them, and you can draft one from a <a href="#/threads">thread</a> where both assistants answered.</span></div>'}</section>
+  ${closed.length ? `<section><h2>Resolved <span class="cnt">${closed.length}</span></h2>${closed.map(d => decisionCard(d, true)).join("")}</section>` : ""}`;
+}
+
 // ---------- Time ----------
 const PURPOSES = ["Focus", "Entertainment", "Other", "Untagged"];
 const hm = sec => { const m = Math.round(sec / 60); return m < 60 ? m + " min" : Math.floor(m / 60) + " h " + String(m % 60).padStart(2, "0") + " m"; };
-async function renderTime() {
-  const t = await api("/api/time");
-  $("#sub").textContent = "Where your time went, from Daybook on this computer. Read when you open this page; nothing is stored.";
+function timeBody(t, compact) {
   if (t.state !== "connected") {
     const label = t.state === "off" ? "Time tracking is off" : t.state === "unreadable" ? "Daybook could not be read" : "Not connected";
-    $("#view").innerHTML = `<div class="card"><div class="t">${esc(label)}</div><p>${esc(t.message)}</p></div>`;
-    return;
+    return `<div class="card"><div class="t">${esc(label)}</div><p>${esc(t.message)}</p></div>`;
   }
-  const max = Math.max(1, ...t.days.map(d => Math.max(d.seconds || 0, PURPOSES.reduce((a, p) => a + (d.by_purpose ? d.by_purpose[p] : 0), 0))));
+  const size = d => Math.max(d.seconds || 0, PURPOSES.reduce((a, p) => a + (d.by_purpose ? d.by_purpose[p] : 0), 0));
+  const max = Math.max(1, ...t.days.map(size));
   const bars = t.days.map(d => d.recorded
     ? `<div class="bar"><span>${esc(d.date)}</span><div class="track" title="${esc(PURPOSES.map(p => p + " " + hm(d.by_purpose[p])).join(", "))}">${PURPOSES.map(p => d.by_purpose[p] ? `<span class="p-${p}" style="width:${(d.by_purpose[p] / max * 100).toFixed(2)}%"></span>` : "").join("")}</div><span>${esc(hm(d.seconds))}</span></div>`
     : `<div class="bar"><span>${esc(d.date)}</span><span class="note">not recorded${d.date === t.end ? " yet (Daybook records finished days)" : ""}</span><span></span></div>`).join("");
   const sum = PURPOSES.filter(p => t.by_purpose[p]).map(p => `${p} ${hm(t.by_purpose[p])}`).join(" · ");
-  $("#view").innerHTML = `${t.message ? `<div class="banner">${esc(t.message)}</div>` : ""}${t.demo ? `<div class="banner">Daybook is showing its fictional demo data.</div>` : ""}
-  <div class="strip">
-    <div class="tile"><span class="k">Latest recorded day</span><span class="big">${t.latest_recorded ? esc(t.latest_recorded) : "none yet"}</span><div class="meta">${t.today && t.today.recorded ? "" : "Today is not recorded yet"}</div></div>
-    <div class="tile"><span class="k">Last 7 days (${t.recorded_days} recorded)</span><span class="big">${esc(hm(t.total_seconds))}</span><div class="meta">${esc(sum)}</div></div>
-    <div class="tile"><span class="k">Source</span><span class="big">Daybook</span><div class="meta">${t.scope ? "scope: " + esc(t.scope) : ""}</div></div>
-  </div>
-  <section><h2>Time per day, ${esc(t.start)} to ${esc(t.end)}</h2>
-  <div class="legend">${PURPOSES.map(p => `<span><i class="p-${p}"></i>${p}</span>`).join("")}<span>Bar length: hours that day, same scale for every day</span></div>
+  const latest = t.days.filter(d => d.recorded).at(-1);
+  return `${t.message ? `<div class="banner">${esc(t.message)}</div>` : ""}${t.demo ? `<div class="banner">Daybook is showing its fictional demo data.</div>` : ""}
+  <div class="card"><span class="k">${latest ? "Latest recorded day, " + esc(latest.date) : "Latest recorded day"}</span><span class="big">${latest ? esc(hm(latest.seconds)) : "none yet"}</span>
+    <div class="meta">${latest ? esc(PURPOSES.filter(p => latest.by_purpose[p]).map(p => p + " " + hm(latest.by_purpose[p])).join(" · ")) : ""}</div>
+    <div class="meta">${t.today && t.today.recorded ? "" : "Today is not recorded yet. "}Last 7 days (${t.recorded_days} recorded): ${esc(hm(t.total_seconds))}${sum ? " · " + esc(sum) : ""}</div></div>
+  <div class="legend">${PURPOSES.map(p => `<span><i class="p-${p}"></i>${p}</span>`).join("")}<span>Bar length: time that day, one scale for all days</span></div>
   <div class="bars">${bars}</div>
-  <p class="note">${t.notes.map(esc).join(" ")}</p></section>`;
+  ${compact ? `<p class="note"><a href="#/time">Full view</a></p>` : `<p class="note">${t.notes.map(esc).join(" ")}${t.scope ? " Scope: " + esc(t.scope) + "." : ""}</p>`}`;
+}
+async function renderTime() {
+  const t = await api("/api/time");
+  $("#sub").textContent = "Where your time went, from Daybook on this computer. Read when you open this page; nothing is stored.";
+  $("#view").innerHTML = `<section><h2>Time per day, ${esc(t.start)} to ${esc(t.end)}</h2>${timeBody(t, false)}</section>`;
+}
+
+// ---------- Set up (first run) ----------
+let SNIP = {};
+function setupPanel(s) {
+  SNIP = {...Object.fromEntries(Object.entries(s.snippets).map(([k, v]) => [k, v.text])), test: s.test_command};
+  const agents = s.agents.map(a => `<div class="row" style="margin:4px 0"><span class="who ${esc(a.id)}">${esc(a.display)}</span>${a.has_token ? `<span class="ok-line">Token ready</span><button data-token="${esc(a.id)}" data-label="replace the token (the agent must be set up again)">Replace token</button>` : `<button class="primary" data-token="${esc(a.id)}">Create token</button>`}</div>`).join("");
+  const snip = (key, title) => s.snippets[key].text ? `<details class="card" style="margin:6px 0"><summary>${esc(title)}</summary><div class="note">Paste into: ${esc(s.snippets[key].into)}</div><pre class="cmd">${esc(s.snippets[key].text)}</pre><div class="row"><button data-copy="${esc(key)}">Copy</button><span class="note" data-copymsg></span></div></details>` : "";
+  return `<div class="card"><ol class="steps">
+    <li><h3>Give each agent a token</h3><div class="note">A token is a file in this install's data folder that lets one agent submit items. It cannot answer them.</div>${agents}</li>
+    <li><h3>Teach the agent to ask you</h3>${s.is_checkout ? snip("codex", "Codex: AGENTS.md text") + snip("claude_skill", "Claude Code: skill (recommended)") + snip("claude_md", "Claude Code: CLAUDE.md text instead") : '<div class="note">The ready-made text ships in the source checkout (docs/agent-instructions).</div>'}<div class="note">The folders in these texts are filled in for this install.</div></li>
+    <li><h3>Send a test item</h3><div class="note">Run this in a terminal, or ask the agent to. This page notices the item by itself.</div><pre class="cmd">${esc(s.test_command)}</pre><div class="row"><button data-copy="test">Copy command</button><span class="note" data-copymsg></span></div>
+    <div>${s.first_item ? '<span class="ok-line">First item received. Open the <a href="#/inbox">Inbox</a> to answer it.</span>' : '<span class="note">Waiting for the first item…</span>'}</div></li></ol></div>`;
+}
+async function renderSetup() {
+  const s = await api("/api/setup"); SNIP.test = s.test_command;
+  $("#sub").textContent = "Connect Codex or Claude Code so they can ask you for things.";
+  $("#view").innerHTML = `<section><h2>Connect an agent</h2>${setupPanel(s)}</section>
+  <section><h2>What this dashboard can see</h2><div class="card"><ul class="cov">${s.coverage.map(c => `<li>${esc(c.source)}: <b>${esc(c.state)}</b></li>`).join("")}</ul></div></section>`;
 }
 
 // ---------- router, polling, events ----------
@@ -368,6 +421,8 @@ async function route(force) {
     else if (parts[0] === "tasks" && parts[1]) await renderTask(parts[1]);
     else if (parts[0] === "tasks") await renderTasks();
     else if (parts[0] === "decisions" && parts[1]) await renderDecision(parts[1]);
+    else if (parts[0] === "decisions") await renderDecisions();
+    else if (parts[0] === "setup") await renderSetup();
     else if (parts[0] === "activity") await renderActivity();
     else if (parts[0] === "review") await renderReview(parts[1]);
     else if (parts[0] === "inbox") await renderInbox();
@@ -405,7 +460,13 @@ document.addEventListener("click", async ev => {
       if (b.dataset.rec === "copy") { await navigator.clipboard.writeText(rec.markdown); msg.textContent = "Copied. Paste it into your repo, for example docs/decisions/" + rec.filename; }
       else { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([rec.markdown], {type: "text/markdown"})); a.download = rec.filename; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); msg.textContent = "Saved " + rec.filename; }
       return; }
-    if (b.dataset.ans) {
+    if (b.dataset.copy) {
+      await navigator.clipboard.writeText(SNIP[b.dataset.copy] || ""); const m = b.parentElement.querySelector("[data-copymsg]"); if (m) m.textContent = "Copied"; return; }
+    if (b.dataset.token) {
+      if (b.dataset.label && !b.dataset.armed) { b.dataset.armed = "1"; b.dataset.text = b.textContent; b.textContent = "Confirm: " + b.dataset.label;
+        setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = b.dataset.text; } }, 5000); return; }
+      b.disabled = true; await api(`/api/setup/token/${encodeURIComponent(b.dataset.token)}`, {method: "POST"}); }
+    else if (b.dataset.ans) {
       if (b.dataset.label && !b.dataset.armed) { b.dataset.armed = "1"; b.dataset.text = b.textContent; b.textContent = `Confirm ${b.dataset.label}`;
         setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = b.dataset.text; } }, 5000); return; }
       b.disabled = true;

@@ -130,3 +130,14 @@ class Tokens:
     def who(self, token: str | None) -> str | None:
         self._reload()
         return self.hashes.get(self._h(token)) if token else None
+
+
+def write_token_file(tokens: "Tokens", data_dir: Path, principal: str) -> Path:
+    """Issue a new token for `principal` (revoking the old one) and store it in `<data>/secrets/<principal>.token`.
+    The token value is never returned or printed."""
+    token = tokens.issue(principal)
+    f = Path(data_dir) / "secrets" / f"{principal}.token"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(token)
+    f.chmod(0o600)
+    return f

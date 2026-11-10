@@ -167,6 +167,13 @@ def site(tmp_path_factory, fake_daybook):
         http.patch(f"/api/tasks/{task['id']}", json={"expected_version": http.get(f"/api/tasks/{task['id']}").json()["version"],
                                                      "changes": {"status": status}}).raise_for_status()
     review_md = http.get("/api/review/record").json()["markdown"]
+    # agent text on Home's new sections: an agent's task in progress, and one waiting for the owner's review
+    mine = http.post("/api/tasks", json={"title": HOSTILE, "project_id": "general", "owner": "claude", "status": "in_progress",
+                                          "next_action": HOSTILE}).json()["task"]
+    rev = http.post("/api/tasks", json={"title": HOSTILE, "project_id": "general", "owner": "claude", "status": "in_progress",
+                                         "next_action": HOSTILE, "why": HOSTILE}).json()["task"]
+    http.post(f"/api/tasks/{rev['id']}/artifacts", json={"kind": "doc", "title": HOSTILE, "url": BAD_URL}).raise_for_status()
+    http.patch(f"/api/tasks/{rev['id']}", json={"changes": {"status": "needs_review"}}).raise_for_status()
     agent_tokens = {a: app.state.ws.tokens.issue(a) for a in ("claude", "gpt")}
     for agent, kind in (("claude", "approval"), ("gpt", "question")):  # items from two agents, every text field hostile
         http.post("/api/asks", headers={"Authorization": f"Bearer {agent_tokens[agent]}"}, json={
@@ -180,7 +187,7 @@ def site(tmp_path_factory, fake_daybook):
     yield {"base": base, "http": http, "profile": profile,
            "pages": {"home": "#/", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
                      "task": f"#/tasks/{task['id']}", "decision": f"#/decisions/{dec['id']}", "resolved": f"#/decisions/{done['id']}",
-                     "activity": "#/activity", "review": "#/review", "inbox": "#/inbox", "time": "#/time"}, "record": record, "review_md": review_md}
+                     "activity": "#/activity", "review": "#/review", "inbox": "#/inbox", "time": "#/time", "decisions": "#/decisions", "setup": "#/setup"}, "record": record, "review_md": review_md}
     server.should_exit = True
     thread.join(timeout=10)
     app.state.ws.close()
@@ -208,7 +215,7 @@ def inspect(html):
     return dom
 
 
-@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox", "time"])
+@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox", "time", "decisions", "setup"])
 def test_hostile_text_stays_inert(site, name):
     html = dump(site, site["pages"][name])
     dom = inspect(html)

@@ -46,6 +46,42 @@ Limits **(default)**: title 200 characters, details 2000, blocked and cost 300; 
 
 Setup is `git clone`, `uv sync`, `uv run ws serve`, `uv run ws token <agent>`. Ready-to-copy instructions live in `docs/agent-instructions/`: an `AGENTS.md` snippet for Codex, and a skill plus a `CLAUDE.md` snippet for Claude Code. They teach the submit, withdraw and read-the-answer commands. Slice 3 adds the "what needs the person now" command to the same files. Codex's sandbox may block localhost or the token file; the snippet tells the agent to say so rather than retry.
 
+## The front end: one shell (slice 2, built)
+
+Requirement from the owner: one front end, easy to use. Everything below is **(proposal)** unless stated. The look stays the existing one (same fonts, colours, spacing); what changes is structure.
+
+One shell, one navigation, on every screen: `Home · Inbox · Decisions · Tasks · Threads · Review · Time · Activity · Set up`. The inbox count shows on Inbox. On a phone the navigation wraps and every section stacks in the same order.
+
+```
+Home
++--------------------------------------------------------------+
+| Needs you now                         3 waiting · All in Inbox|
+|  high  Approve the schema migration?   Claude · waited 2 h    |
+|        Blocked: deploy   If it waits: release slips           |
+|        [note........] [Approve] [Decline] [Dismiss]           |
+|  ...up to 5 rows, same row and buttons as the Inbox page...   |
++------------------------------+-------------------------------+
+| Your time                    | Your agents                   |
+| latest recorded day, 7 bars, | Claude  ready                 |
+| split Focus/Ent./Other       |  waiting on you: 2 items      |
+| (or "Not connected" + how)   |  working on: 1 task           |
+|                              | GPT ...                       |
++------------------------------+-------------------------------+
+| Spend: not connected. Nothing reports agent cost yet.        |
++--------------------------------------------------------------+
+| Work: tasks waiting on you, threads, projects, tickets,      |
+| what this dashboard can see                                  |
++--------------------------------------------------------------+
+```
+
+- **Answering is the same everywhere:** inbox rows, decision cards and review tasks use one row pattern; the answer buttons sit in the row, risky ones ask for a second click. A decision's options and a review task's Accept/Send back appear in place in the Inbox and on Home, so nothing needs a page change.
+- **What moves where:** pending decisions and tasks to review leave Home's separate lists and appear in "Needs you now"; the **Decisions** view lists all decisions (pending and resolved); **Tasks**, **Threads**, **Review**, **Activity** keep their pages inside the same shell; the old Time page becomes the Home "Your time" section plus its own full view; "What this dashboard can see" moves under Set up.
+- **First run:** while no item has ever been submitted, Home opens with a "Get started" strip instead of an empty inbox: (1) create a token for each agent (a button, no command), (2) copy the instructions for Codex or Claude Code (already filled in with this install's paths), (3) run one test command and watch the page confirm the first item. The same steps stay available under **Set up**.
+- **Empty states** say what to do next, not only that there is nothing.
+- **Spend** is a place, not a feature: it says no source is connected. A cost source is a later slice.
+- **No command for daily use:** answering, approving, accepting, reviewing, reading time and starting threads are all in the page. Still needing a command: starting the server, the one-time sign-in link, and the agents' own submissions.
+- **Agent text** (titles, details, blocked, cost, task and decision text, scope names) is shown as text everywhere, including the new Home sections and Set up; the browser test loads each of these pages with hostile text.
+
 ## What stays local, never in the repo
 
 The database, tokens, config, screen-time data, local paths, bills, names. All live under `data/` (git-ignored) or in the source application. Tests and docs use invented fixtures only.
