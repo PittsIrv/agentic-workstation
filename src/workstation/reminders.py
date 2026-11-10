@@ -273,7 +273,7 @@ def log(svc, cfg: dict, now: datetime | None = None, limit: int = 50) -> dict:
             bucket = "in_window" if outcome == "acted_in_window" else "later"
         elif what == "unknown":
             outcome, bucket, lag = "item_gone", "gone", None
-        elif (svc.s.snoozes.get(r["key"]) or "") > now.isoformat():
+        elif (u := svc.s.snoozes.get(r["key"])) and _dt(u) > now:
             outcome, bucket, lag = "snoozed", "snoozed", None
         else:
             outcome, bucket, lag = "not_yet", "waiting", None

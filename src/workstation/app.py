@@ -593,7 +593,8 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     @app.post("/api/reminders/run")
     def reminders_run(body: RunIn, who: str = Depends(owner)):
         """Which due items to remind about now; records them unless dry_run. The caller prints or notifies."""
-        return reminders.run(ws.svc, who, rcfg(), views.DISPLAY_TZ, body.channel, body.dry_run)
+        with ws.store.lock:
+            return reminders.run(ws.svc, who, rcfg(), views.DISPLAY_TZ, body.channel, body.dry_run)
 
     # ---- normalised event intake (assistants and bridges) ----------------------------------
 
