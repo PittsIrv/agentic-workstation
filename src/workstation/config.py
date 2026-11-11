@@ -46,6 +46,7 @@ class Config:
     tickets_path: str = ""
     tickets_title: str = "Tickets"
     tickets_closed: list[str] = field(default_factory=lambda: list(DEFAULT_CLOSED))
+    runners_enabled: bool = False  # the server runs the local claude/codex CLI on an owner @mention only when true
     gemini_model: str = "gemini-3-1-pro"  # the model the built-in `gemini` identity stands for (level only; never called)
     levels_models: dict = field(default_factory=dict)  # model -> level entries that override the shipped table
     levels_default: int | None = None  # level of a model in no table; None keeps the shipped default
@@ -72,6 +73,9 @@ def load(data_dir: Path | str) -> Config:
     cfg.claude_model = claude.get("model", cfg.claude_model)
     cfg.gpt_model = gpt.get("model", cfg.gpt_model)
     cfg.gpt_effort = gpt.get("effort", cfg.gpt_effort)
+    cfg.runners_enabled = raw.get("runners", {}).get("enabled", cfg.runners_enabled)
+    if not isinstance(cfg.runners_enabled, bool):
+        raise ValueError(f"{path}: runners.enabled must be true or false")
     cfg.gemini_model = raw.get("agents", {}).get("gemini", {}).get("model", cfg.gemini_model)
     lv = raw.get("levels", {})
     cfg.levels_models = dict(lv.get("models", {}))

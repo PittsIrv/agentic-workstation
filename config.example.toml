@@ -46,6 +46,12 @@ daily_cap = 3
 repeat_minutes = 1440
 acted_window_minutes = 120   # reminder log: "acted on" means answered within this long after the reminder
 
+[runners]
+# Off by default. When true, an owner @mention of @claude or @gpt in a thread makes this server run the local `claude` /
+# `codex` command (it uses that agent's own credit) and post the reply. When false, the server calls no agent: a mention
+# waits on the board and the agent picks it up (`ws inbox`, `ws claim`, `ws reply`), as added agents always do.
+enabled = false
+
 [agents.claude]
 # Model alias or id passed to `claude -p --model`. It also sets this agent's level (see [levels] below).
 model = "sonnet"

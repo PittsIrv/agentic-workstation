@@ -35,7 +35,7 @@ from .principals import AGENTS, InvalidAgent, Tokens, can, configure_owner, is_h
 from . import review as weekly
 from .export import decision_record
 from .principals import owner as owner_id
-from .runners import Dispatcher, PullOnly, Runner, build_prompt, default_runners, parse_reply
+from .runners import Dispatcher, PullOnly, Runner, board_runners, build_prompt, default_runners, parse_reply
 from .service import Conflict, Forbidden, Invalid, NotFound, Service
 from .store import Store
 from .tickets import TicketFile
@@ -254,7 +254,8 @@ class Workstation:
         self.levels = self.svc.levels = Levels(self.config.levels_models, self.config.levels_default)
         self.discussions.may_overrule = self.may_overrule
         if runners is None:
-            runners = default_runners(self.config.claude_model, self.config.gpt_model, self.config.gpt_effort)
+            runners = (default_runners(self.config.claude_model, self.config.gpt_model, self.config.gpt_effort)
+                       if self.config.runners_enabled else board_runners())
         self.dispatcher = Dispatcher(self.svc, runners)
         self._agents_mtime = None
         self.sync_agents()
