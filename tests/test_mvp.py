@@ -152,10 +152,13 @@ def test_identity_comes_from_the_token_and_cookie_writes_need_same_origin(ws):
 def test_role_limits_for_secretary_and_reviewer(ws):
     app, c, tokens = ws
     mk = lambda who, **kw: c.post("/api/tasks", headers=H(tokens, who), json={"title": "x", "project_id": "workstation", **kw})
-    assert mk("gemini", owner="claude").status_code == 403
+    # assignment follows level (default config: gpt-6-astra 3, sonnet and gemini-3-1-pro 2), not vendor
+    assert mk("gemini", owner="claude").status_code == 200       # peers
     assert mk("gemini").json()["task"]["owner"] == "owner"
-    s = mk("gpt", owner="claude", status="ready").json()["task"]
-    assert (s["owner"], s["status"], s["suggested"]) == ("owner", "inbox", True)
+    s = mk("gpt", owner="claude", status="ready").json()["task"]  # higher level assigns down
+    assert (s["owner"], s["status"], s["suggested"]) == ("claude", "ready", False)
+    assert mk("claude", owner="gpt", status="ready").status_code == 403  # lower cannot assign up
+    assert mk("gemini", owner="gpt", status="ready").status_code == 403
     q = {"question": "q", "options": [{"label": "a"}, {"label": "b"}], "project_id": "workstation"}
     assert c.post("/api/decisions", headers=H(tokens, "gemini"), json=q).status_code == 403
     assert c.post("/api/decisions", headers=H(tokens, "gpt"), json=q).status_code == 200

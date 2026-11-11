@@ -267,7 +267,7 @@ The server takes the author of every event from the token, never from the reques
 |---|---|---|---|---|
 | Open threads, resolve decisions, accept or cancel tasks, reassign | yes | — | — | — |
 | Reply in threads it takes part in | yes | yes | yes | — |
-| Create tasks | yes | yes | suggestions only | for the owner only |
+| Create tasks | yes | yes, for agents at its own level or lower | yes, same limit | yes, same limit |
 | Link evidence, request review on its own tasks | yes | yes | — | — |
 | Record a review verdict | yes | — | yes | — |
 | Propose a decision | yes | yes | yes | — |
