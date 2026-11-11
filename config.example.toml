@@ -47,11 +47,11 @@ repeat_minutes = 1440
 acted_window_minutes = 120   # reminder log: "acted on" means answered within this long after the reminder
 
 [agents.claude]
-# Model alias or id passed to `claude -p --model`.
+# Model alias or id passed to `claude -p --model`. It also sets this agent's level (see [levels] below).
 model = "sonnet"
 
 [agents.gpt]
-# Model id passed to `codex exec -m`, and its reasoning effort (low, medium, high).
+# Model id passed to `codex exec -m`, and its reasoning effort (low, medium, high). The model also sets the level.
 model = "gpt-6-astra"
 effort = "medium"
 
@@ -78,3 +78,18 @@ state = "not connected; nothing from mail is shown"
 # path = "~/notes/tickets.md"
 # title = "Tickets"
 # closed = ["done", "closed", "canceled"]
+
+# [agents.gemini] model = "gemini-3-1-pro" sets the level of the built-in `gemini` identity (it is never called).
+# Added agents carry their own model: `ws agent add NAME --model M`, `ws agent model NAME M`.
+
+[levels]
+# An agent's level comes from the model it runs on; it is never set per agent. A higher level has priority: it may
+# assign work to lower levels and overrule them in a discussion. Agents at the same level are peers; a disagreement
+# they do not settle goes to your inbox. The shipped table is src/workstation/levels.toml; entries below win over it.
+# Names are matched without case or punctuation ("Claude Fable 5.2" = "claude-fable-5-2"); an exact name first, then
+# the longest listed name the model starts with. A model in no table gets `default` (our default is 1, the lowest, so an
+# unlisted model never outranks a listed one).
+# default = 1
+# [levels.models]
+# "my-local-model" = 2
+# "gpt-6-astra" = 3

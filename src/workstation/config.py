@@ -46,6 +46,9 @@ class Config:
     tickets_path: str = ""
     tickets_title: str = "Tickets"
     tickets_closed: list[str] = field(default_factory=lambda: list(DEFAULT_CLOSED))
+    gemini_model: str = "gemini-3-1-pro"  # the model the built-in `gemini` identity stands for (level only; never called)
+    levels_models: dict = field(default_factory=dict)  # model -> level entries that override the shipped table
+    levels_default: int | None = None  # level of a model in no table; None keeps the shipped default
     inbox_max_open_per_agent: int = 20  # open items one agent may have waiting on the owner
     time_source: str = "daybook"  # daybook | off
     daybook_url: str = "http://127.0.0.1:8765"
@@ -69,6 +72,10 @@ def load(data_dir: Path | str) -> Config:
     cfg.claude_model = claude.get("model", cfg.claude_model)
     cfg.gpt_model = gpt.get("model", cfg.gpt_model)
     cfg.gpt_effort = gpt.get("effort", cfg.gpt_effort)
+    cfg.gemini_model = raw.get("agents", {}).get("gemini", {}).get("model", cfg.gemini_model)
+    lv = raw.get("levels", {})
+    cfg.levels_models = dict(lv.get("models", {}))
+    cfg.levels_default = lv.get("default", cfg.levels_default)
     tk = raw.get("tickets", {})
     cfg.tickets_path = str(tk.get("path", cfg.tickets_path))
     cfg.tickets_title = str(tk.get("title", cfg.tickets_title))
@@ -118,5 +125,7 @@ def validate(cfg: Config, path: Path | str = "config") -> None:
         raise ValueError(f"{path}: time.source must be daybook or off")
     from .timesources import check_loopback
     check_loopback(cfg.daybook_url)
+    from .levels import check_table
+    check_table(cfg.levels_models, cfg.levels_default if cfg.levels_default is not None else 1, f"{path}: [levels]")
     if cfg.gpt_effort not in ("low", "medium", "high"):
         raise ValueError(f"{path}: agents.gpt.effort must be low, medium or high")
