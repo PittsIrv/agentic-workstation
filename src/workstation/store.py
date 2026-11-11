@@ -51,6 +51,7 @@ class State:
     dispatches: dict[str, dict] = field(default_factory=dict)
     projects: dict[str, dict] = field(default_factory=dict)
     asks: dict[str, dict] = field(default_factory=dict)  # items an agent submitted for the owner
+    discussions: dict[str, dict] = field(default_factory=dict)  # conversations between agents, with posts and an outcome
     snoozes: dict[str, str] = field(default_factory=dict)  # item key -> snoozed until (ISO), set by the owner
     pause: dict | None = None  # {"until": ISO | None, "at": ISO}; None means reminders are on
     reminders: list[dict] = field(default_factory=list)  # every reminder recorded, oldest first
@@ -257,6 +258,20 @@ class Store:
             rec.update({k: v for k, v in p.items() if k != "id"})
             rec["status"] = "withdrawn" if t == "ask_withdrawn" else "closed"
             rec["closed_by"], rec["closed_at"] = ev["actor"], ev["recorded_at"]
+            self._touch(rec, ev)
+        elif t == "discussion_opened":
+            rec = {**p, "status": "open", "posts": [], "created_at": ev["recorded_at"], "opened_by": ev["actor"]}
+            s.discussions[p["id"]] = rec
+            self._touch(rec, ev)
+        elif t == "discussion_posted":
+            rec = s.discussions[p["discussion_id"]]
+            rec["posts"].append({"seq": len(rec["posts"]) + 1, "id": p["id"], "author": ev["actor"], "text": p["text"],
+                                 "stance": p.get("stance", "none"), "at": ev["recorded_at"]})
+            self._touch(rec, ev)
+        elif t == "discussion_closed":
+            rec = s.discussions[p["id"]]
+            rec.update({"status": "closed", "outcome": p["outcome"], "note": p.get("note", ""), "ask_id": p.get("ask_id"),
+                        "closed_by": ev["actor"], "closed_at": ev["recorded_at"]})
             self._touch(rec, ev)
         elif t == "item_snoozed":
             s.snoozes[p["key"]] = p["until"]

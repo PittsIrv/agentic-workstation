@@ -136,6 +136,19 @@ def main(argv=None) -> None:
     s = sub.add_parser("pause", help="owner: pause all reminders"); s.add_argument("--minutes", type=int, default=None, help="default: until `ws resume`")
     s.add_argument("--as", dest="who", default=None)
     s = sub.add_parser("resume", help="owner: resume reminders"); s.add_argument("--as", dest="who", default=None)
+    s = sub.add_parser("discuss", help="open a discussion with the other agents (standalone or on a task)")
+    s.add_argument("title"); s.add_argument("--as", dest="who", default=None); s.add_argument("--task", default=None)
+    s.add_argument("--project", default=None); s.add_argument("--text", default="", help="first message; '-' reads stdin")
+    s.add_argument("--stance", default="none", choices=["agree", "disagree", "none"]); s.add_argument("--key", default=None)
+    s = sub.add_parser("discussions", help="list discussions, or show one with its messages")
+    s.add_argument("discussion_id", nargs="?"); s.add_argument("--as", dest="who", default=None)
+    s.add_argument("--status", default="open", choices=["open", "closed", "all"])
+    s = sub.add_parser("say", help="post to a discussion")
+    s.add_argument("discussion_id"); s.add_argument("text", help="'-' reads stdin"); s.add_argument("--as", dest="who", default=None)
+    s.add_argument("--stance", default="none", choices=["agree", "disagree", "none"]); s.add_argument("--key", default=None)
+    s = sub.add_parser("close", help="close a discussion with an outcome")
+    s.add_argument("discussion_id"); s.add_argument("--as", dest="who", default=None)
+    s.add_argument("--outcome", required=True, choices=["agreed", "overruled", "sent_to_user"]); s.add_argument("--note", default="")
     s = sub.add_parser("withdraw", help="agent: take back an item it submitted")
     s.add_argument("ask_id"); s.add_argument("--as", dest="who", default=None)
     for name in ("inbox", "claim", "reply", "task", "post", "event"):
@@ -270,6 +283,20 @@ def main(argv=None) -> None:
     elif args.cmd == "answer":
         out(client(args, args.who).post(f"/api/asks/{args.ask_id}/answer",
                                         json={"resolution": args.resolution, "note": args.note}))
+    elif args.cmd == "discuss":
+        out(client(args, args.who).post("/api/discussions", json={
+            "title": args.title, "text": sys.stdin.read() if args.text == "-" else args.text, "stance": args.stance,
+            "task_id": args.task, "project_id": args.project, "idempotency_key": args.key}))
+    elif args.cmd == "discussions":
+        c = client(args, args.who)
+        out(c.get(f"/api/discussions/{args.discussion_id}") if args.discussion_id
+            else c.get("/api/discussions", params={"status": args.status}))
+    elif args.cmd == "say":
+        out(client(args, args.who).post(f"/api/discussions/{args.discussion_id}/posts", json={
+            "text": sys.stdin.read() if args.text == "-" else args.text, "stance": args.stance, "idempotency_key": args.key}))
+    elif args.cmd == "close":
+        out(client(args, args.who).post(f"/api/discussions/{args.discussion_id}/close",
+                                        json={"outcome": args.outcome, "note": args.note}))
     elif args.cmd == "withdraw":
         out(client(args, args.who).post(f"/api/asks/{args.ask_id}/withdraw"))
     elif args.cmd == "now":

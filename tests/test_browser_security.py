@@ -195,11 +195,18 @@ def site(tmp_path_factory, fake_daybook):
     http.post("/api/asks", headers=muse, json={"title": HOSTILE[:200], "kind": "question", "text": HOSTILE}).raise_for_status()
     http.post("/api/tasks", headers=muse, json={"title": HOSTILE, "project_id": "general", "owner": "muse",
                                                 "status": "in_progress", "next_action": HOSTILE}).raise_for_status()
+    # a discussion between two agents, every text field hostile, one outcome recorded
+    disc = http.post("/api/discussions", headers=muse, json={"title": HOSTILE[:200], "text": HOSTILE, "stance": "agree"}).json()["discussion"]
+    http.post(f"/api/discussions/{disc['id']}/posts", headers={"Authorization": f"Bearer {agent_tokens['claude']}"},
+              json={"text": HOSTILE, "stance": "disagree"}).raise_for_status()
+    http.post(f"/api/discussions/{disc['id']}/close", headers=muse,
+              json={"outcome": "sent_to_user", "note": HOSTILE[:500]}).raise_for_status()
     profile = tmp_path_factory.mktemp("profile")
     yield {"base": base, "http": http, "profile": profile,
            "pages": {"home": "#/", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
                      "task": f"#/tasks/{task['id']}", "decision": f"#/decisions/{dec['id']}", "resolved": f"#/decisions/{done['id']}",
-                     "activity": "#/activity", "review": "#/review", "inbox": "#/inbox", "time": "#/time", "decisions": "#/decisions", "setup": "#/setup"}, "record": record, "review_md": review_md}
+                     "activity": "#/activity", "review": "#/review", "inbox": "#/inbox", "time": "#/time", "decisions": "#/decisions", "setup": "#/setup", "discussions": "#/discussions",
+                     "discussion": f"#/discussions/{disc['id']}"}, "record": record, "review_md": review_md}
     server.should_exit = True
     thread.join(timeout=10)
     app.state.ws.close()
@@ -227,7 +234,7 @@ def inspect(html):
     return dom
 
 
-@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox", "time", "decisions", "setup"])
+@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox", "time", "decisions", "setup", "discussions", "discussion"])
 def test_hostile_text_stays_inert(site, name):
     html = dump(site, site["pages"][name])
     dom = inspect(html)
@@ -276,3 +283,13 @@ def test_exported_markdown_is_inert_when_rendered_in_a_browser(site, tmp_path, e
     assert not [a for a in dom.attrs if a.startswith("on") or "pwned" in a]
     assert not [u for u in dom.urls if u.startswith(("javascript:", "data:", "vbscript:"))]
     assert "<title>Record</title>" in out.stdout and any("onerror" in t for t in dom.text)
+
+
+def test_a_discussion_between_agents_is_visible_in_the_front_end(site):
+    """Two agents' messages, their stances and the recorded outcome show on the discussion page and in the list."""
+    page = " ".join(inspect(dump(site, site["pages"]["discussion"])).text)
+    assert "agree" in page and "disagree" in page and "Sent to you" in page
+    assert page.count("onerror") >= 3  # the opening post, the reply and the closing note, as plain text
+    assert "Muse" in page or "muse" in page.lower()
+    listing = " ".join(inspect(dump(site, site["pages"]["discussions"])).text)
+    assert "2 message(s)" in listing and "Sent to you" in listing

@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 
+from . import discussions as disc
 from . import inbox as inbox_view
 from . import reminders
 from . import timesources
@@ -82,6 +83,26 @@ class AskIn(BaseModel):
     due_tz: str | None = None
     url: str | None = None
     idempotency_key: str | None = None
+
+
+class DiscussionIn(BaseModel):
+    title: str
+    text: str = ""
+    stance: str = "none"
+    task_id: str | None = None
+    project_id: str | None = None
+    idempotency_key: str | None = None
+
+
+class PostIn(BaseModel):
+    text: str
+    stance: str = "none"
+    idempotency_key: str | None = None
+
+
+class CloseIn(BaseModel):
+    outcome: str
+    note: str = ""
 
 
 class AnswerIn(BaseModel):
@@ -220,6 +241,7 @@ class Workstation:
         self.time_source = (timesources.Daybook(self.config.daybook_url, self.config.daybook_scope)
                             if self.config.time_source == "daybook" else timesources.Off())
         self.svc.max_open_asks = self.config.inbox_max_open_per_agent
+        self.discussions = disc.Discussions(self.svc)
         if runners is None:
             runners = default_runners(self.config.claude_model, self.config.gpt_model, self.config.gpt_effort)
         self.dispatcher = Dispatcher(self.svc, runners)
@@ -603,6 +625,39 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     @app.post("/api/asks/{ask_id}/withdraw")
     def withdraw_ask(ask_id: str, who: str = Depends(principal)):
         return inbox_view.ask_card(ws.svc, ws.svc.withdraw_ask(who, ask_id))
+
+    # ---- discussions: agents talk to each other; any registered agent reads and posts -----------------
+
+    def keyed(who: str, d: dict) -> dict:
+        if d.get("idempotency_key"):
+            d["idempotency_key"] = f"{who}:{d['idempotency_key']}"
+        return d
+
+    @app.post("/api/discussions")
+    def new_discussion(body: DiscussionIn, who: str = Depends(principal)):
+        d, outcome = ws.discussions.open(who, **keyed(who, body.model_dump()))
+        return {"outcome": outcome, "discussion": disc.card(d, full=True)}
+
+    @app.get("/api/discussions")
+    def list_discussions(status: str | None = None, _: str = Depends(principal)):
+        if status not in (None, "open", "closed", "all"):
+            raise Invalid("status must be open, closed or all")
+        with ws.store.lock:
+            return ws.discussions.list(status)
+
+    @app.get("/api/discussions/{discussion_id}")
+    def get_discussion(discussion_id: str, _: str = Depends(principal)):
+        with ws.store.lock:
+            return disc.card(ws.discussions.get(discussion_id), full=True)
+
+    @app.post("/api/discussions/{discussion_id}/posts")
+    def post_discussion(discussion_id: str, body: PostIn, who: str = Depends(principal)):
+        d, outcome = ws.discussions.post(who, discussion_id, **keyed(who, body.model_dump()))
+        return {"outcome": outcome, "discussion": disc.card(d, full=True)}
+
+    @app.post("/api/discussions/{discussion_id}/close")
+    def close_discussion(discussion_id: str, body: CloseIn, who: str = Depends(principal)):
+        return disc.card(ws.discussions.close(who, discussion_id, **body.model_dump()), full=True)
 
     # ---- reminders: what needs the owner now, the rule, snooze and pause, the log ----------------
 
