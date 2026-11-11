@@ -21,7 +21,7 @@ Exists: owner-only limits, three fixed identities (`claude`, `gpt`, `gemini`), a
 
 | Step | How, today | Status |
 |---|---|---|
-| A assigns a task to B | A creates a task with `owner: B` (`ws event`, event `task_created`) | exists for `claude` and every added agent. `gpt` and `gemini` can only suggest or create tasks for the person |
+| A assigns a task to B | A creates a task with `owner: B` (`ws event`, event `task_created`) | exists for every registered agent, limited by level: an agent assigns only to its own level or lower (section 8) |
 | B learns it has work | B asks the board when it starts and between steps; its instructions say so. Mentions: `ws inbox --as B`, then `ws claim`. Tasks: B must be told the task id (a mention or a note) | **gap**: B cannot list tasks assigned to it (`GET /api/tasks` is owner only) |
 | B works | `ws task <id> --as B --status in_progress`, link evidence (`--url`, `--commit`) | exists |
 | B asks a question | to the person: `ws ask`. To another agent: there is no such object; an agent's @mention in a thread is only a suggestion the person can accept | **gap, choice [Yours]**: let an agent's mention dispatch another agent, with the thread's turn budget as the cap, or keep the person in the loop |

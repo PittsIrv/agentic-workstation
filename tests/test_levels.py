@@ -173,3 +173,48 @@ def test_the_cli_adds_an_agent_with_a_model_lists_levels_and_changes_the_model(t
     with pytest.raises(SystemExit):
         cli.main(base + ["agent", "model", "claude", "gpt-6-astra"])
     AGENTS.pop("muse", None)
+
+
+# ---- assignment follows level, not vendor (Router ruling) -------------------------------------------------------
+def test_built_in_agents_assign_by_level_not_by_vendor(tmp_path, agents):
+    (tmp_path / "config.toml").write_text('[agents.claude]\nmodel = "claude-fable-5-2"\n[agents.gpt]\nmodel = "gpt-6-astra"\n')
+    app, c, tokens = make(tmp_path, agents)
+    app.state.ws.svc.upsert_project("owner", "workstation", "Workstation build")
+    low = add(c, tokens, "scout", "claude-haiku-5-5")
+    mk = lambda who, owner: c.post("/api/tasks", headers=H(tokens, who), json={
+        "title": "x", "project_id": "workstation", "owner": owner, "status": "ready"})
+    assert mk("gpt", "claude").status_code == 200 and mk("claude", "gpt").status_code == 200   # two managers: peers
+    assert mk("gpt", "scout").status_code == 200 and mk("gemini", "scout").status_code == 200  # down
+    assert mk("gemini", "claude").status_code == 403 and mk("gemini", "gpt").status_code == 403  # up: refused
+    assert mk("gemini", "gemini").status_code == 200
+    app.state.ws.close()
+
+
+def test_no_owner_only_action_opens_to_any_agent_at_any_level(tmp_path, agents):
+    (tmp_path / "config.toml").write_text('[agents.claude]\nmodel = "claude-fable-5-2"\n[agents.gpt]\nmodel = "gpt-6-astra"\n')
+    app, c, tokens = make(tmp_path, agents)
+    svc = app.state.ws.svc
+    svc.upsert_project("owner", "workstation", "Workstation build")
+    scout = add(c, tokens, "scout", "claude-haiku-5-5")
+    tid = c.post("/api/tasks", headers=H(tokens, "claude"), json={
+        "title": "x", "project_id": "workstation", "owner": "scout", "status": "ready"}).json()["task"]["id"]
+    ask = c.post("/api/asks", headers=scout, json={"title": "q"}).json()["ask"]["id"]
+    review = c.post("/api/tasks", headers=H(tokens), json={"title": "r", "project_id": "workstation", "owner": "scout",
+                                                            "status": "in_progress"}).json()["task"]["id"]
+    n = len(svc.s.events)
+    for who in ("claude", "gpt", "gemini", "scout"):
+        h = H(tokens, who) if who != "scout" else scout
+        r = [c.patch(f"/api/tasks/{tid}", headers=h, json={"changes": {"status": "done"}}),
+             c.patch(f"/api/tasks/{tid}", headers=h, json={"changes": {"status": "canceled"}}),
+             c.patch(f"/api/tasks/{tid}", headers=h, json={"changes": {"owner": "gpt"}}),
+             c.post(f"/api/asks/{ask}/answer", headers=h, json={"resolution": "answered", "note": "x"}),
+             c.post("/api/threads", headers=h, json={"title": "t", "project_id": "workstation"}),
+             c.post("/api/agents", headers=h, json={"id": "evil"}),
+             c.post("/api/agents/scout/model", headers=h, json={"model": "gpt-6-astra"}),
+             c.post("/api/projects", headers=h, json={"id": "p", "name": "p"}),
+             c.post("/api/snooze", headers=h, json={"key": f"ask:{ask}", "minutes": 5})]
+        assert [x.status_code for x in r] == [403] * len(r), (who, [x.text for x in r])
+    assert len(svc.s.events) == n or all(e["event_type"] == "action_refused" for e in svc.s.events[n:])
+    assert svc.s.tasks[tid]["status"] == "ready" and svc.s.tasks[tid]["owner"] == "scout"
+    assert svc.s.asks[ask]["status"] == "open"
+    app.state.ws.close()

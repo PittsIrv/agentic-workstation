@@ -29,13 +29,13 @@ AGENTS: dict[str, dict] = {
     "gpt": {
         "kind": "agent", "display": "GPT", "handle": "gpt",
         "role": "Independent research and review peer; does not edit Claude-owned code",
-        "capabilities": {"reply", "review_record", "decision_propose", "task_suggest", "agent_blocked", "ask_owner", "discuss"},
+        "capabilities": {"reply", "review_record", "decision_propose", "task_create", "task_suggest", "agent_blocked", "ask_owner", "discuss"},
         "projects": {"*"}, "runtime": "codex-cli",
     },
     "gemini": {
         "kind": "agent", "display": "Gemini", "handle": "gemini",
         "role": "Secretary: reminders, schedule, organisation; makes no technical or strategic decisions",
-        "capabilities": {"task_create_for_human", "task_update_own", "agent_blocked", "ask_owner", "discuss"},
+        "capabilities": {"task_create", "task_create_for_human", "task_update_own", "agent_blocked", "ask_owner", "discuss"},
         "projects": {"*"}, "runtime": "not-connected",
     },
     # Internal author of notices (dispatch failures, budget limits). Never gets a token.
