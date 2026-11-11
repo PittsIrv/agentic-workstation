@@ -186,6 +186,11 @@ def default_runners(claude_model: str = "sonnet", gpt_model: str = "gpt-6-astra"
             "gemini": Unconnected("no Gemini runtime is connected yet")}
 
 
+def board_runners() -> dict[str, Runner]:
+    """The default: the server runs no agent. A mention waits for the agent to pick it up (`ws inbox`, `ws claim`)."""
+    return {"claude": PullOnly(), "gpt": PullOnly(), "gemini": Unconnected("no Gemini runtime is connected yet")}
+
+
 # ---- prompt and parsing ------------------------------------------------------------------
 MODE_TEXT = {
     "reply": "Answer the owner's latest request in the thread. Give your own independent view; you have not seen "

@@ -292,7 +292,7 @@ Read this before you put anything sensitive in it.
 - Agent-written `@mentions` never trigger other agents.
 - Duplicate deliveries are recognized by idempotency key.
 - The server listens on 127.0.0.1 only and refuses unknown `Host` headers.
-- Thread replies come from runners with no tools. The Codex runner refuses unchecked Codex versions and unfamiliar feature lists rather than guessing.
+- The server runs no agent unless you set `[runners] enabled = true` in `config.toml`; otherwise a mention waits on the board and the agent picks it up (`ws inbox`, `ws claim`). When enabled, thread replies come from runners with no tools. The Codex runner refuses unchecked Codex versions and unfamiliar feature lists rather than guessing.
 
 **Not enforced: this is a single-user tool on a trusted machine**
 - **Your files are readable by your own processes.** The owner token is a file in `data/secrets/`. Any process running as your OS user can read it and act as you, and so can the database. That includes a full Claude Code or Codex session you start yourself. "Only the owner approves" is an API rule against agent tokens, not isolation from your own processes. Running agent sessions as a separate OS user or in a container would close this; the workstation does not do that for you.
