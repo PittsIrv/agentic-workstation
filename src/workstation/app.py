@@ -28,6 +28,7 @@ from . import reminders
 from . import timesources
 from . import views
 from . import config as configuration
+from .levels import Levels
 from . import principals as agent_registry
 from .principals import AGENTS, InvalidAgent, Tokens, can, configure_owner, is_human, write_token_file
 from . import review as weekly
@@ -144,6 +145,11 @@ class AgentIn(BaseModel):
     id: str
     display: str | None = None
     role: str | None = None
+    model: str | None = None
+
+
+class ModelIn(BaseModel):
+    model: str | None = None
 
 
 class ResolveIn(BaseModel):
@@ -223,6 +229,8 @@ class Workstation:
         self.data.mkdir(parents=True, exist_ok=True)
         self.config = configuration.load(self.data)
         configure_owner(self.config.owner_id, self.config.owner_name)
+        for pid, model in ("claude", self.config.claude_model), ("gpt", self.config.gpt_model), ("gemini", self.config.gemini_model):
+            AGENTS[pid]["model"] = model
         views.DISPLAY_TZ, views.COVERAGE = self.config.timezone, self.config.coverage
         views.TICKETS = TicketFile(self.config.tickets_path or None, tuple(self.config.tickets_closed),
                                    self.config.tickets_title)
@@ -242,6 +250,8 @@ class Workstation:
                             if self.config.time_source == "daybook" else timesources.Off())
         self.svc.max_open_asks = self.config.inbox_max_open_per_agent
         self.discussions = disc.Discussions(self.svc)
+        self.levels = self.svc.levels = Levels(self.config.levels_models, self.config.levels_default)
+        self.discussions.may_overrule = self.may_overrule
         if runners is None:
             runners = default_runners(self.config.claude_model, self.config.gpt_model, self.config.gpt_effort)
         self.dispatcher = Dispatcher(self.svc, runners)
@@ -254,6 +264,14 @@ class Workstation:
             self.owner_file.write_text(self.tokens.issue(owner_id()))
             self.owner_file.chmod(0o600)
 
+
+    def may_overrule(self, actor: str, d: dict) -> bool:
+        """The owner always may. An agent may close a discussion as overruled only when its level is strictly higher than
+        every other agent that took part (peers at the top level cannot overrule each other)."""
+        if is_human(actor):
+            return True
+        others = [p for p in disc.participants(d) if p != actor]
+        return bool(others) and all(self.levels.of(actor) > self.levels.of(p) for p in others)
 
     def sync_agents(self) -> None:
         """Install owner-added agents from `<data>/agents.json` (also when the CLI added one while the server runs);
@@ -384,12 +402,21 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     @app.get("/api/principals")
     def principals(_: str = Depends(principal)):
         return {"owner": owner_id(), "timezone": views.DISPLAY_TZ,
-                "principals": {pid: {k: a[k] for k in ("display", "kind", "role")} for pid, a in AGENTS.items()}}
+                "principals": {pid: {**{k: a[k] for k in ("display", "kind", "role")},
+                                    **({"model": a.get("model", ""), "level": ws.levels.of(pid)} if a["kind"] == "agent" else {})}
+                               for pid, a in AGENTS.items()}}
+
+    @app.get("/api/levels")
+    def levels_table(_: str = Depends(principal)):
+        """The model -> level table in force and each agent's model and level (derived, never set per agent)."""
+        return {**ws.levels.table(), "agents": {pid: {"model": a.get("model", ""), "level": ws.levels.of(pid)}
+                                                for pid, a in AGENTS.items() if a["kind"] == "agent"}}
 
     @app.get("/api/me")
     def me(who: str = Depends(principal)):
         a = AGENTS[who]
-        return {"id": who, "display": a["display"], "kind": a["kind"], "role": a["role"]}
+        return {"id": who, "display": a["display"], "kind": a["kind"], "role": a["role"],
+                **({"model": a.get("model", ""), "level": ws.levels.of(who)} if a["kind"] == "agent" else {})}
 
     @app.get("/api/home")
     def home(_: str = Depends(owner)):
@@ -569,6 +596,7 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         return {
             "agents": [{"id": a, "display": AGENTS[a]["display"], "has_token": (ws.data / "secrets" / f"{a}.token").exists(),
                         "submitted": sum(x["asked_by"] == a for x in asks), "custom": bool(AGENTS[a].get("custom")),
+                        "model": AGENTS[a].get("model", ""), "level": ws.levels.of(a),
                         **({"instructions": instructions_for(a)} if AGENTS[a].get("custom") else {})}
                        for a in setup_agent_ids()],
             "first_item": bool(asks), "snippets": snippets,
@@ -589,13 +617,23 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         """Add an agent kind by name (for example codex, claude-code, muse). Creates its token file and returns the
         copy-ready instructions. Owner only; the token itself is never returned."""
         try:
-            agent_registry.add_custom(ws.data, body.id, body.display, body.role)
+            agent_registry.add_custom(ws.data, body.id, body.display, body.role, body.model)
         except InvalidAgent as e:
             raise Invalid(str(e)) from None
         ws.sync_agents()
         write_token_file(ws.tokens, ws.data, body.id)
         return {"id": body.id, "display": AGENTS[body.id]["display"], "has_token": True,
                 "instructions": instructions_for(body.id)}
+
+    @app.post("/api/agents/{agent}/model")
+    def set_agent_model(agent: str, body: ModelIn, who: str = Depends(owner)):
+        """Change the model of an added agent; its level follows from the table. Owner only."""
+        try:
+            agent_registry.set_custom_model(ws.data, agent, body.model)
+        except InvalidAgent as e:
+            raise Invalid(str(e)) from None
+        ws.sync_agents()
+        return {"id": agent, "model": AGENTS[agent]["model"], "level": ws.levels.of(agent)}
 
     @app.post("/api/asks")
     def new_ask(body: AskIn, who: str = Depends(principal)):

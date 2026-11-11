@@ -93,8 +93,10 @@ def main(argv=None) -> None:
     s = sub.add_parser("serve"); s.add_argument("--port", type=int, default=None); s.add_argument("--fake", action="store_true")
     sub.add_parser("open")
     s = sub.add_parser("token"); s.add_argument("principal")
-    s = sub.add_parser("agent", help="owner: add an agent kind by name (codex, claude-code, muse, ...) or list them")
-    s.add_argument("action", choices=["add", "list"]); s.add_argument("name", nargs="?")
+    s = sub.add_parser("agent", help="owner: add an agent kind by name (codex, claude-code, muse, ...), list them, or set an added agent's model")
+    s.add_argument("action", choices=["add", "list", "model"]); s.add_argument("name", nargs="?")
+    s.add_argument("model", nargs="?", help="for `model`: the model name; its level comes from the levels table")
+    s.add_argument("--model", dest="model_flag", default=None, help="for `add`: the model the agent runs on")
     s.add_argument("--display", default=None, help="name shown on the page (default: the name, capitalised)")
     s.add_argument("--role", default=None, help="one line about what the agent does")
     s = sub.add_parser("export"); s.add_argument("path")
@@ -189,16 +191,30 @@ def main(argv=None) -> None:
         print(f"token for {args.principal} written to {f} (previous one revoked)")
     elif args.cmd == "agent":
         if args.action == "list":
+            from .levels import Levels
+            lv = Levels(args.cfg.levels_models, args.cfg.levels_default)
             for pid, a in principals.AGENTS.items():
                 if a["kind"] == "agent":
-                    print(f"{pid}\t{a['display']}\t{'added' if a.get('custom') else 'built in'}\t{a['role']}")
+                    model = a.get("model") or {"claude": args.cfg.claude_model, "gpt": args.cfg.gpt_model,
+                                               "gemini": args.cfg.gemini_model}.get(pid, "")
+                    print(f"{pid}\t{a['display']}\t{'added' if a.get('custom') else 'built in'}\t"
+                          f"{model or 'unknown model'}\tlevel {lv.of_model(model)}\t{a['role']}")
+            return
+        if args.action == "model":
+            if not (args.name and args.model):
+                sys.exit("usage: ws agent model NAME MODEL")
+            try:
+                principals.set_custom_model(data_dir(args), args.name, args.model)
+            except principals.InvalidAgent as e:
+                sys.exit(str(e))
+            print(f"{args.name} now runs on {args.model}")
             return
         if not args.name:
             sys.exit("usage: ws agent add NAME [--display D] [--role R]")
         from .app import agent_instructions
         d = data_dir(args)
         try:
-            principals.add_custom(d, args.name, args.display, args.role)
+            principals.add_custom(d, args.name, args.display, args.role, args.model_flag)
         except principals.InvalidAgent as e:
             sys.exit(str(e))
         f = principals.write_token_file(principals.Tokens(d / "tokens.json"), d, args.name)

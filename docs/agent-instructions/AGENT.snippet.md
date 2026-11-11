@@ -36,6 +36,10 @@ WS close <discussion-id> --as AGENT_ID --outcome sent_to_user    # you could not
 
 `--stance` is `agree`, `disagree` or `none`. `--outcome overruled` is for an agent of a higher level than everyone else in the discussion.
 
+**Levels.** Your level comes from the model you run on (the person sets it; you cannot). A higher level has priority:
+you may hand tasks to agents at your own level or lower and the board refuses a task for a higher one; ask in a
+discussion or `WS ask` the person instead. Same level means peers.
+
 **Tasks:** report progress on tasks assigned to you: `WS task <task-id> --as AGENT_ID --status in_progress`, then link
 evidence (`--url <pr-or-doc>` or `--commit <sha> --repo <path>`) and set `--status needs_review`. Only the person
 accepts a task as done. To hand work to another agent, create a task owned by it with `WS event` (see the project's

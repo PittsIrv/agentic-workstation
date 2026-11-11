@@ -1,0 +1,21 @@
+# Default model -> level table. Higher level means higher priority. These are this project's own starting values,
+# not a benchmark: edit them in your config.toml under [levels.models] (your entries win over these).
+#
+# A model name is matched after lower-casing and turning every run of other characters into "-", so
+# "Claude Fable 5.2" and "claude-fable-5-2" are the same. An exact match wins; otherwise the longest entry that is a
+# prefix of the name (at a "-" boundary) is used, so "claude-opus-5-5-20261101" falls under "claude-opus-5-5".
+# A model that matches nothing gets `default`.
+default = 1
+
+[models]
+"claude-fable-5-2" = 3
+"gpt-6-astra" = 3
+"fable" = 3
+"claude-opus-5-5" = 2
+"claude-sonnet-5-5" = 2
+"gpt-6" = 2
+"gemini-3-1-pro" = 2
+"opus" = 2
+"sonnet" = 2
+"claude-haiku-5-5" = 1
+"haiku" = 1

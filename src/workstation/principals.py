@@ -79,6 +79,13 @@ def _plain(text: object, what: str, limit: int) -> str:
     return text.strip()
 
 
+def check_model(model: object) -> str:
+    """A model name is free text up to 80 printable characters; empty means unknown (it gets the default level)."""
+    if model is None or model == "":
+        return ""
+    return _plain(model, "model", 80)
+
+
 def check_new_agent(agent_id: str, display: str | None, role: str | None) -> tuple[str, str, str]:
     if not isinstance(agent_id, str) or not AGENT_ID_RE.fullmatch(agent_id):
         raise InvalidAgent("name must be lowercase letters, digits or -, start with a letter, and be at most 32 long")
@@ -108,7 +115,8 @@ def load_custom(data_dir: Path) -> None:
                 continue  # a hand-edited file never installs a reserved or malformed id
             AGENTS[pid] = {"kind": "agent", "display": card["display"], "handle": pid,
                            "role": card.get("role") or DEFAULT_ROLE, "capabilities": set(CUSTOM_CAPS),
-                           "projects": {"*"}, "runtime": "board", "custom": True}
+                           "projects": {"*"}, "runtime": "board", "custom": True,
+                           "model": check_model(card.get("model"))}
 
 
 def custom_mtime(data_dir: Path) -> tuple[int, int]:
@@ -121,7 +129,8 @@ def custom_mtime(data_dir: Path) -> tuple[int, int]:
     return (st.st_mtime_ns, st.st_size)
 
 
-def add_custom(data_dir: Path, agent_id: str, display: str | None = None, role: str | None = None) -> dict:
+def add_custom(data_dir: Path, agent_id: str, display: str | None = None, role: str | None = None,
+               model: str | None = None) -> dict:
     """Register a new agent kind. Serialised across processes; the file is replaced whole."""
     d = Path(data_dir)
     d.mkdir(parents=True, exist_ok=True)
@@ -131,7 +140,27 @@ def add_custom(data_dir: Path, agent_id: str, display: str | None = None, role: 
         agent_id, display, role = check_new_agent(agent_id, display, role)
         f = _agents_file(d)
         cards = json.loads(f.read_text()) if f.exists() else {}
-        cards[agent_id] = {"display": display, "role": role}
+        cards[agent_id] = {"display": display, "role": role, "model": check_model(model)}
+        fd, tmp = tempfile.mkstemp(dir=d, prefix=".agents-")
+        with os.fdopen(fd, "w") as out:
+            json.dump(cards, out, indent=1)
+        os.replace(tmp, f)
+        load_custom(d)
+    return AGENTS[agent_id]
+
+
+def set_custom_model(data_dir: Path, agent_id: str, model: str | None) -> dict:
+    """Change the model of an owner-added agent (its level follows). Built-in agents take theirs from config.toml."""
+    d = Path(data_dir)
+    with open(d / "agents.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        load_custom(d)
+        if not AGENTS.get(agent_id, {}).get("custom"):
+            raise InvalidAgent(f"{agent_id} is not an added agent; built-in agents take their model from config.toml")
+        model = check_model(model)
+        f = _agents_file(d)
+        cards = json.loads(f.read_text())
+        cards[agent_id]["model"] = model
         fd, tmp = tempfile.mkstemp(dir=d, prefix=".agents-")
         with os.fdopen(fd, "w") as out:
             json.dump(cards, out, indent=1)

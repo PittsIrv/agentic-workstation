@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
+from .levels import Levels
 from .principals import AGENTS, by_handle, can, is_human
 from .principals import owner as owner_id
 from . import store as _store
@@ -119,6 +120,7 @@ class Service:
         self.store = store
         self.on_dispatch = on_dispatch or (lambda _id: None)
         self.max_open_asks = DEFAULT_MAX_OPEN_ASKS
+        self.levels = Levels()  # replaced from config at start
         self._refused_at: dict[tuple[str, str], datetime] = {}  # in memory: stops a loop, not worth persisting
 
     @property
@@ -190,6 +192,15 @@ class Service:
         self.store.append("action_refused", actor, {"action": action, "reason": reason[:200]})
         return True
 
+    # ---- levels: who may assign to and overrule whom ---------------------------------------
+    def check_can_assign(self, actor: str, assignee: str) -> None:
+        """An agent assigns work only to an agent at its own level or lower (peers may assign to each other)."""
+        if assignee == actor or AGENTS[assignee]["kind"] != "agent":
+            return
+        if self.levels.of(actor) < self.levels.of(assignee):
+            raise Forbidden(f"{actor} (level {self.levels.of(actor)}) cannot assign work upward to "
+                            f"{assignee} (level {self.levels.of(assignee)}); ask in a discussion or ask the owner")
+
     # ---- tasks ---------------------------------------------------------------------------
     @atomic
     def create_task(self, actor: str, *, title: str, project_id: str, owner: str | None = None, status: str = "inbox",
@@ -229,6 +240,8 @@ class Service:
                 owner, status, suggested = owner_id(), "inbox", True
             else:
                 raise Forbidden(f"{actor} may not create tasks in {project_id}")
+        if not is_human(actor):
+            self.check_can_assign(actor, owner)
         due_at, due_tz = parse_due(due_at, due_tz)
 
         if entity_key and (existing := self.store.task_for_entity(project_id, entity_key)) \
