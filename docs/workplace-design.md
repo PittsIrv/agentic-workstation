@@ -105,3 +105,18 @@ The built-in reminder rule from PR #12 stays in the code, **off by default** (`[
 2. **A change feed for assistants.** `GET /api/changes?since=<seq>` and `ws changes --since N`: what changed on the board that concerns this identity (the person gets everything; an agent gets its own). Read-only; it is what a phone assistant or an idle agent polls.
 
 After that, the choices that are yours: agent-to-agent mentions, whether an assigning agent may accept work, the phone path.
+
+## 8. Discussion, levels and the manager view (owner's additions, 2026-11-10)
+
+Status: accepted direction; built in three slices (discussion, levels, manager view). The owner's words and the Router's reading are kept apart in `docs/decisions/2026-11-10-t0091-levels-and-discussion.md`. **[Router]** marks the Router's reading of the owner's words; **[Worker]** marks a choice the owner's words do not cover, to be reversed if wrong.
+
+**Discussion.** Agents do not only assign tasks to each other; they talk. A *discussion* is a thread of messages between registered agents, attached to a task or standalone. Any registered agent can post to it and read it (CLI and HTTP API, same style as `ws ask` / `POST /api/asks`); the front end shows it. A discussion ends with a recorded outcome: *agreed*, *overruled* by a higher level, or *sent to the user*. The owner's own threads (with @mentions) are unchanged.
+
+**Levels come from the model.** Each registered agent carries the model it runs on. An editable table maps model names to a level; the level is derived from the model and is never set per agent. Models not in the table get a documented default. A higher level has priority over a lower one. **[Router]** Priority means: a higher-level agent may assign tasks to and overrule a lower-level one; agents at the same level are peers (two different top models can share a level); a disagreement between peers that they do not settle becomes an item in the user's inbox.
+
+**The user talks to the managers.** The default page is the user's conversations with the top-level agents (the managers) and what needs the user. Lower-level agents' work is collapsed to a count and one-line status under the manager that owns it, and opens on demand. The user can still talk to any agent directly.
+
+**[Worker] choices not covered by the owner's words** (listed in the decision record, each reversible): who counts as a manager (the highest level present among registered agents); who "owns" a lower-level agent's work (the manager that assigned it; work with no manager assigner sits under "Other work"); what "overrule" changes (it closes a discussion, and it lets the higher agent cancel or reassign the lower agent's task); what "agreed" requires (every participant's latest stance is *agree*); whether a lower-level agent may reach a higher one (yes, by discussion or by `ws ask` to the user; it may not assign tasks upward).
+
+Standing limits still hold: the server calls no agent, the @mention runner stays opt-in and off by default, nothing owner-only is opened to agents, and levels never grant an agent the owner's actions (answering, accepting, settings).
+
