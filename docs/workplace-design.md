@@ -58,7 +58,7 @@ Result: the thread shows the person's message, a notice that Muse works through 
 The workspace's part: a place to address one agent or several (`@muse @codex ...` in a thread), and to show each reply as a message by its author. It exists: threads, mentions, replies from `ws reply`. The agent's part: reading the mention, thinking, answering.
 
 - The person addresses agents in the thread box. Several mentions in one message dispatch each.
-- A reply appears as a message from that agent when it posts it (`ws reply`). For `claude` and `gpt` the server can also run the local CLI itself when it is installed (tools off / read-only sandbox). **Flag for the Router**: that is a server-side agent call that exists today (PR before this work); under the corrected direction it should be a deliberate opt-in, not a default. Added agents never get it.
+- A reply appears as a message from that agent when it posts it (`ws reply`). For `claude` and `gpt` the server can also run the local CLI itself when it is installed (tools off / read-only sandbox). This invokes the user's existing harness; it is a deliberate opt-in (`[runners] enabled`), not a default. Added agents never get it.
 - Speech **[Mine]**: no code. The operating system's dictation (macOS Dictation, or the phone keyboard's microphone) types into the existing message box, and nothing is recorded or sent by the workspace. Dictation by the OS may use the vendor's cloud and needs the microphone permission the person grants to the OS.
 - Optional later **[Yours]**: a microphone button using the browser's speech recognition. In Chrome that sends audio to a cloud speech service (a network service) and asks for microphone permission each site; Safari uses its own. Not built; I recommend waiting.
 
@@ -90,7 +90,7 @@ The board runs on the person's machine and listens on `127.0.0.1` only; the serv
 
 - Decide when, how often or through which channel to remind the person.
 - Plan, prioritise or schedule the person's day.
-- Call an agent or a model itself (the existing `claude`/`gpt` runners should become opt-in).
+- Call an agent or a model itself (the optional `claude`/`gpt` runner is opt-in and only invokes the user's installed command).
 - Record, store or send speech.
 - Read mail, calendar or screen time as part of its job (the Time page reads Daybook locally and stores nothing; keep it that way).
 - Listen on the network, or hold accounts, by default.
@@ -120,3 +120,4 @@ Status: accepted direction; built in three slices (discussion, levels, manager v
 
 Standing limits still hold: the server calls no agent, the @mention runner stays opt-in and off by default, nothing owner-only is opened to agents, and levels never grant an agent the owner's actions (answering, accepting, settings).
 
+**Not an agent harness.** The workspace is a shared board and message layer. It never implements its own agent loop, tool calling or model calls, and it does not wrap or replace the harness an agent already runs in. Agents stay in Codex, Claude Code or whatever they use, and reach the board through the CLI and HTTP API. Discussions and levels are records and rules on the board: an agent posts and reads from inside its own harness, and a level rule is enforced when the board accepts a write (assign, overrule, close), never by controlling an agent. The optional runner that invokes the user's already-installed Claude Code or Codex command on an owner @mention is an interaction with that harness, stays opt-in, and the page shows what agents posted rather than driving them.
