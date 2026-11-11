@@ -113,6 +113,7 @@ def site(tmp_path_factory, fake_daybook):
     tickets.write_text(f"## T-0001 · {HOSTILE}\n- status: open\n- priority: P1\n- repo: {HOSTILE}\n")
     esc = lambda s: json.dumps(s)  # TOML basic strings share JSON's escaping
     (data / "config.toml").write_text(
+        f'[agents.claude]\nmodel = "claude-fable-5-2"\n'
         f"[owner]\nname = {esc(HOSTILE)}\n[tickets]\npath = {esc(str(tickets))}\ntitle = {esc(HOSTILE)}\n"
         f"[[coverage]]\nsource = {esc(HOSTILE)}\nstate = {esc(HOSTILE)}\n"
         f'[reminders]\nenabled = true\nwait_minutes_high = 0\nquiet_start = "00:00"\nquiet_end = "00:00"\n'
@@ -195,6 +196,9 @@ def site(tmp_path_factory, fake_daybook):
     http.post("/api/asks", headers=muse, json={"title": HOSTILE[:200], "kind": "question", "text": HOSTILE}).raise_for_status()
     http.post("/api/tasks", headers=muse, json={"title": HOSTILE, "project_id": "general", "owner": "muse",
                                                 "status": "in_progress", "next_action": HOSTILE}).raise_for_status()
+    # lower-level work: a manager (claude is level 3 here) hands a task to the added, lower-level muse
+    http.post("/api/tasks", headers={"Authorization": f"Bearer {agent_tokens['claude']}"}, json={
+        "title": HOSTILE, "project_id": "general", "owner": "muse", "status": "ready", "next_action": HOSTILE}).raise_for_status()
     # a discussion between two agents, every text field hostile, one outcome recorded
     disc = http.post("/api/discussions", headers=muse, json={"title": HOSTILE[:200], "text": HOSTILE, "stance": "agree"}).json()["discussion"]
     http.post(f"/api/discussions/{disc['id']}/posts", headers={"Authorization": f"Bearer {agent_tokens['claude']}"},
@@ -203,7 +207,7 @@ def site(tmp_path_factory, fake_daybook):
               json={"outcome": "sent_to_user", "note": HOSTILE[:500]}).raise_for_status()
     profile = tmp_path_factory.mktemp("profile")
     yield {"base": base, "http": http, "profile": profile,
-           "pages": {"home": "#/", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
+           "pages": {"home": "#/", "overview": "#/overview", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
                      "task": f"#/tasks/{task['id']}", "decision": f"#/decisions/{dec['id']}", "resolved": f"#/decisions/{done['id']}",
                      "activity": "#/activity", "review": "#/review", "inbox": "#/inbox", "time": "#/time", "decisions": "#/decisions", "setup": "#/setup", "discussions": "#/discussions",
                      "discussion": f"#/discussions/{disc['id']}"}, "record": record, "review_md": review_md}
@@ -234,7 +238,7 @@ def inspect(html):
     return dom
 
 
-@pytest.mark.parametrize("name", ["home", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox", "time", "decisions", "setup", "discussions", "discussion"])
+@pytest.mark.parametrize("name", ["home", "overview", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox", "time", "decisions", "setup", "discussions", "discussion"])
 def test_hostile_text_stays_inert(site, name):
     html = dump(site, site["pages"][name])
     dom = inspect(html)
@@ -293,3 +297,20 @@ def test_a_discussion_between_agents_is_visible_in_the_front_end(site):
     assert "Muse" in page or "muse" in page.lower()
     listing = " ".join(inspect(dump(site, site["pages"]["discussions"])).text)
     assert "2 message(s)" in listing and "Sent to you" in listing
+
+
+def test_the_default_page_shows_manager_conversations_and_folds_lower_level_work(site):
+    """DOM assertion: managers by name and level, their conversations, and lower-level work inside closed <details>."""
+    import re
+    html = dump(site, site["pages"]["home"])
+    dom = inspect(html)
+    assert "Your managers" in " ".join(dom.text) and "level 3" in " ".join(dom.text)
+    cards = re.findall(r'<div class="card mgr" data-manager="([a-z0-9-]+)"', html)
+    assert cards == ["claude", "gpt"]                      # both top-model agents, and nobody else
+    assert 'data-manager="muse"' not in html               # the lower-level agent has no card of its own
+    tag = re.search(r'<details class="lower" data-lower="claude"[^>]*>', html)
+    assert tag and " open" not in tag.group(0), "lower-level work must start collapsed"
+    summary = re.search(r'<details class="lower" data-lower="claude"[^>]*><summary>(.*?)</summary>', html, re.S).group(1)
+    assert "1 open task" in summary and "1 queued" in summary  # a count and a one-line status
+    assert "Talk to an agent" in " ".join(dom.text)
+    assert 'id="talk"' in html

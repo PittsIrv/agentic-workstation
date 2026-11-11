@@ -23,6 +23,7 @@ nav{display:flex;gap:4px;flex-wrap:wrap} nav a{text-decoration:none;color:var(--
 .cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start} @media(max-width:860px){.cols{grid-template-columns:1fr}}
 section{margin-bottom:18px}
 .card{margin-bottom:10px} .card .t{font-weight:500} .meta{font-size:12.5px;color:var(--mute);margin-top:3px;display:flex;gap:10px;flex-wrap:wrap}
+.lower{margin-top:8px;border-top:1px solid var(--line, #8883);padding-top:6px} .lower summary{cursor:pointer;font-size:14px} .lowag{margin:6px 0 6px 14px} .conv{margin:8px 0}
 .pill{display:inline-block;font-size:11.5px;padding:1px 8px;border-radius:999px;background:var(--mid-bg);color:var(--fg);white-space:nowrap}
 .pill.ask{background:var(--ask-bg);color:var(--ask-fg)} .pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.bad{background:var(--bad-bg);color:var(--bad)} .pill.run{background:transparent;border:1px solid var(--run);color:var(--run)}
 .who{font-weight:500} .who.claude{color:var(--claude)} .who.gpt{color:var(--gpt)} .who.gemini{color:var(--gemini)} .who.human{color:var(--human)} .who.system{color:var(--mute)}
@@ -68,7 +69,7 @@ pre.cmd{font:12.5px/1.45 var(--mono);background:var(--bg);border:1px solid var(-
 </head>
 <body>
 <div class="top"><h1>Workstation</h1>
-<nav><a href="#/" data-nav="home">Home</a><a href="#/inbox" data-nav="inbox">Inbox <span id="inboxcnt" class="pill"></span></a><a href="#/decisions" data-nav="decisions">Decisions</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/threads" data-nav="threads">Threads</a><a href="#/discussions" data-nav="discussions">Discussions</a><a href="#/review" data-nav="review">Review</a><a href="#/time" data-nav="time">Time</a><a href="#/activity" data-nav="activity">Activity</a><a href="#/setup" data-nav="setup">Set up</a></nav></div>
+<nav><a href="#/" data-nav="home">Managers</a><a href="#/overview" data-nav="overview">Overview</a><a href="#/inbox" data-nav="inbox">Inbox <span id="inboxcnt" class="pill"></span></a><a href="#/decisions" data-nav="decisions">Decisions</a><a href="#/tasks" data-nav="tasks">Tasks</a><a href="#/threads" data-nav="threads">Threads</a><a href="#/discussions" data-nav="discussions">Discussions</a><a href="#/review" data-nav="review">Review</a><a href="#/time" data-nav="time">Time</a><a href="#/activity" data-nav="activity">Activity</a><a href="#/setup" data-nav="setup">Set up</a></nav></div>
 <div class="sub" id="sub">Loading…</div>
 <div id="offline" class="banner hidden" role="status"></div>
 <div id="nowbar" class="banner hidden" role="status"></div>
@@ -190,6 +191,45 @@ async function renderHome() {
   ${ticketsSection(h.tickets)}`;
   api("/api/time").then(t => { const el = $("#home-time"); if (el) el.innerHTML = `<h2>Your time</h2>${timeBody(t, true)}`; })
     .catch(e => { const el = $("#home-time"); if (el && e.message !== "signed out") el.innerHTML = `<h2>Your time</h2><div class="card"><span class="empty">Could not load: ${esc(e.message)}</span></div>`; });
+}
+// ---------- Managers: the default page ----------
+let PROJECTS = [];
+function lowerBlock(l, key, label) {
+  if (!l.count) return `<div class="note">${esc(label)}: nothing open.</div>`;
+  const rows = l.agents.map(a => `<div class="lowag"><div><span class="who ${esc(a.id)}">${esc(a.display)}</span> <span class="note">level ${a.level}${a.model ? " · " + esc(a.model) : ""} · ${esc(a.line)}</span></div>
+    ${a.tasks.map(t => `<div class="note"><a href="#/tasks/${esc(t.id)}">${esc(t.title)}</a> ${pill(t.status)} <span>${esc(t.project)}</span></div>`).join("")}${a.more ? `<div class="note">and ${a.more} more in <a href="#/tasks">Tasks</a></div>` : ""}</div>`).join("");
+  return `<details class="lower" data-lower="${esc(key)}"><summary>${esc(label)}: ${esc(l.line)}</summary>${rows}</details>`;
+}
+function managerCard(m) {
+  const convs = m.conversations.map(c => `<div class="conv"><a class="t" href="#/threads/${esc(c.id)}">${esc(c.title)}</a>${c.waiting_for_reply ? " " + pill("waiting for " + m.display, "run") : ""}
+    <div class="note">${c.last ? `${who(c.last.author)}: ${esc(c.last.text)}` : "No messages"} · ${esc(ago(c.updated_at))}</div></div>`).join("")
+    || `<div class="note">No conversation with ${esc(m.display)} yet. Write below to start one.</div>`;
+  return `<div class="card mgr" data-manager="${esc(m.id)}"><div class="row" style="margin:0;justify-content:space-between"><span><span class="who ${esc(m.id)}">${esc(m.display)}</span> <span class="note">level ${m.level}${m.model ? " · " + esc(m.model) : " · model unknown"}</span></span>
+    <span>${m.waiting_on_owner ? pill(m.waiting_on_owner + " waiting on you", "ask") : ""}</span></div>
+    ${convs}${lowerBlock(m.lower, m.id, "Lower-level work")}</div>`;
+}
+async function renderManagers() {
+  const [mv, nn, h] = await Promise.all([api("/api/managers"), api("/api/needs-now?full=true"), api("/api/home")]);
+  PROJECTS = h.projects;
+  const wasOpen = new Set([...document.querySelectorAll("details.lower[open]")].map(d => d.dataset.lower));  // keep what the owner opened
+  $("#sub").textContent = mv.managers.length
+    ? `Your managers are the agents at the highest level (level ${mv.manager_level}): ${mv.managers.map(m => m.display).join(" and ")}. Work by lower-level agents is folded under them.`
+    : "No agents are registered yet.";
+  const setup = h.first_item ? "" : await api("/api/setup");
+  const options = [...mv.managers, ...mv.agents.filter(a => !mv.managers.some(m => m.id === a.id))];
+  $("#view").innerHTML = `
+  ${h.first_item ? "" : `<section><h2>Get started <span class="cnt">connect your first agent</span></h2>${setupPanel(setup)}</section>`}
+  <section><div class="more"><h2 style="margin:0">Needs you <span class="cnt">${nn.items.length} due</span></h2><a href="#/inbox">Inbox</a></div>
+  ${remindersLine(nn)}
+  ${nn.items.slice(0, CUT).map(inboxRow).join("") || `<div class="card"><span class="empty">Nothing needs you right now. ${nn.waiting_not_due ? nn.waiting_not_due + " item(s) are waiting but not due yet. " : ""}When an agent needs a decision, a review or an approval, it shows up here and in the <a href="#/inbox">Inbox</a>.</span></div>`}
+  ${nn.items.length > CUT ? `<a href="#/inbox">${nn.items.length - CUT} more due in the Inbox</a>` : ""}</section>
+  <section><h2>Your managers <span class="cnt">${mv.managers.length}</span></h2>
+  ${mv.managers.map(managerCard).join("") || '<div class="card"><span class="empty">Add an agent in <a href="#/setup">Set up</a>.</span></div>'}
+  ${mv.other.count ? lowerBlock(mv.other, "other", "Other work (not assigned by a manager)") : ""}</section>
+  <section><h2>Talk to an agent</h2><div class="card"><form id="talk"><div class="row" style="margin:0"><select name="agent" style="width:auto">${options.map(a => `<option value="${esc(a.id)}">${esc(a.display)} (level ${a.level})</option>`).join("")}</select>
+  <textarea name="text" placeholder="What do you want to ask or tell them?" required style="flex:1 1 320px;min-height:52px"></textarea><button class="primary">Send</button></div><div class="err"></div></form>
+  <div class="note">Starts a thread addressed to that agent, so it appears under Threads. You can talk to any agent, not only the managers.</div></div></section>`;
+  document.querySelectorAll("details.lower").forEach(d => { if (wasOpen.has(d.dataset.lower)) d.open = true; });
 }
 function taskForm(projects) {
   return `<form id="newtask" class="row" style="flex-direction:column;align-items:stretch">
@@ -494,7 +534,8 @@ async function route(force) {
   document.querySelectorAll("nav a").forEach(a => a.setAttribute("aria-current", a.dataset.nav === (parts[0] || "home") ? "page" : "false"));
   if (busy) { again = true; return; } busy = true;
   try {
-    if (!parts.length) await renderHome();
+    if (!parts.length) await renderManagers();
+    else if (parts[0] === "overview") await renderHome();
     else if (parts[0] === "threads" && parts[1]) await renderThread(parts[1]);
     else if (parts[0] === "threads") await renderThreads();
     else if (parts[0] === "tasks" && parts[1]) await renderTask(parts[1]);
@@ -595,6 +636,12 @@ document.addEventListener("submit", async ev => {
       const p = await api("/api/principals");
       for (const [id, a] of Object.entries(p.principals)) NAMES[id] = a.display;
       AGENT_IDS = Object.entries(p.principals).filter(([, a]) => a.kind === "agent").map(([id]) => id); }
+    if (f.id === "talk") {
+      const p = PROJECTS[0]; if (!p) throw new Error("Create a project first: uv run ws project ID NAME");
+      const text = fd.text.trim(); if (!text) throw new Error("Write a message first");
+      const t = await api("/api/threads", {method: "POST", body: {title: text.slice(0, 80), project_id: p.id, idempotency_key: crypto.randomUUID()}});
+      await api(`/api/threads/${t.id}/messages`, {method: "POST", body: {text: `@${fd.agent} ${text}`, idempotency_key: crypto.randomUUID()}});
+      location.hash = `#/threads/${t.id}`; return; }
     if (f.id === "taskfilter") { const q = new URLSearchParams(Object.entries(fd).filter(([, v]) => v)); location.hash = "#/tasks?" + q; return; }
     await refresh();
   } catch (e) { const el = f.querySelector(".err") || $("#threaderr"); if (el) el.textContent = e.message; else alert(e.message); }
