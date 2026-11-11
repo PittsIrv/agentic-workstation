@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from . import discussions as disc
 from . import inbox as inbox_view
+from . import managers as manager_page
 from . import reminders
 from . import timesources
 from . import views
@@ -405,6 +406,12 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
                 "principals": {pid: {**{k: a[k] for k in ("display", "kind", "role")},
                                     **({"model": a.get("model", ""), "level": ws.levels.of(pid)} if a["kind"] == "agent" else {})}
                                for pid, a in AGENTS.items()}}
+
+    @app.get("/api/managers")
+    def managers(_: str = Depends(owner)):
+        """The default page: conversations with the top-level agents, lower-level work folded under the manager."""
+        with ws.store.lock:
+            return manager_page.manager_view(ws.svc, ws.levels)
 
     @app.get("/api/levels")
     def levels_table(_: str = Depends(principal)):
