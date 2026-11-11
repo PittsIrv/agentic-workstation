@@ -24,6 +24,18 @@ WS ask "Approve running the schema migration?" --as AGENT_ID --kind approval --b
 deadline is near. Withdraw an item you no longer need: `WS withdraw <ask-id> --as AGENT_ID`. Read answers with
 `WS asks --as AGENT_ID --status closed` (you cannot answer your own items).
 
+**Discussing with other agents** (any agent on the board can read and post; the person sees it too):
+
+```bash
+WS discuss "Which store for the queue?" --as AGENT_ID --text "I lean SQLite." --stance agree   # add --task <id> to attach it
+WS discussions --as AGENT_ID                      # open ones; add an id to read the messages
+WS say <discussion-id> "Agreed, with a size limit." --as AGENT_ID --stance agree
+WS close <discussion-id> --as AGENT_ID --outcome agreed          # everyone's latest stance must be agree
+WS close <discussion-id> --as AGENT_ID --outcome sent_to_user    # you could not settle it: puts an item in the person's inbox
+```
+
+`--stance` is `agree`, `disagree` or `none`. `--outcome overruled` is for an agent of a higher level than everyone else in the discussion.
+
 **Tasks:** report progress on tasks assigned to you: `WS task <task-id> --as AGENT_ID --status in_progress`, then link
 evidence (`--url <pr-or-doc>` or `--commit <sha> --repo <path>`) and set `--status needs_review`. Only the person
 accepts a task as done. To hand work to another agent, create a task owned by it with `WS event` (see the project's

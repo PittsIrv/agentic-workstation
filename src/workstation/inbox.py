@@ -37,7 +37,8 @@ def ask_card(svc: Service, a: dict) -> dict:
         "due_at": a.get("due_at"), "due_tz": a.get("due_tz"), "url": a.get("url"), "status": a["status"],
         "created_at": a["created_at"], "resolution": a.get("resolution"), "note": a.get("note"),
         "closed_by": a.get("closed_by"), "closed_at": a.get("closed_at"), "version": a["version"],
-        "link": f"#/inbox",
+        "discussion_id": a.get("discussion_id"),
+        "link": f"#/discussions/{a['discussion_id']}" if a.get("discussion_id") else "#/inbox",
     }
 
 

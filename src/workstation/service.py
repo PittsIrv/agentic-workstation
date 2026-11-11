@@ -355,11 +355,12 @@ class Service:
     def create_ask(self, actor: str, *, title: str, kind: str = "question", text: str = "", blocked: str = "",
                    cost_of_waiting: str = "", urgency: str = "normal", project_id: str | None = None,
                    task_id: str | None = None, due_at: str | None = None, due_tz: str | None = None,
-                   url: str | None = None, idempotency_key: str | None = None) -> tuple[dict, str]:
+                   url: str | None = None, discussion_id: str | None = None,
+                   idempotency_key: str | None = None) -> tuple[dict, str]:
         """An agent says "this needs you". Returns (ask, outcome) with outcome created | duplicate."""
         fp = self._fp(op="ask", actor=actor, title=title, kind=kind, text=text, blocked=blocked,
                       cost_of_waiting=cost_of_waiting, urgency=urgency, project_id=project_id, task_id=task_id,
-                      due_at=due_at, due_tz=due_tz, url=url)
+                      due_at=due_at, due_tz=due_tz, url=url, discussion_id=discussion_id)
         if (dup := self._dup(idempotency_key, "ask_created", fp=fp)):
             return self._ask(dup["payload"]["id"]), "duplicate"
         if not can(actor, "ask_owner", project_id):
@@ -378,6 +379,8 @@ class Service:
         self._need_project(project_id)
         if task_id and task_id not in self.s.tasks:
             raise Invalid(f"unknown task {task_id}")
+        if discussion_id and discussion_id not in self.s.discussions:
+            raise Invalid(f"unknown discussion {discussion_id}")
         url = check_url(url)
         due_at, due_tz = parse_due(due_at, due_tz)
         open_now = sum(1 for a in self.s.asks.values() if a["asked_by"] == actor and a["status"] == "open")
@@ -388,8 +391,8 @@ class Service:
         self.store.append("ask_created", actor, {
             "id": aid, "title": title.strip(), "kind": kind, "text": text, "blocked": blocked,
             "cost_of_waiting": cost_of_waiting, "urgency": urgency, "project_id": project_id, "task_id": task_id,
-            "due_at": due_at, "due_tz": due_tz, "url": url}, idempotency_key=idempotency_key,
-            project_id=project_id, request_hash=fp)
+            "due_at": due_at, "due_tz": due_tz, "url": url, "discussion_id": discussion_id},
+            idempotency_key=idempotency_key, project_id=project_id, request_hash=fp)
         return self.s.asks[aid], "created"
 
     @atomic
