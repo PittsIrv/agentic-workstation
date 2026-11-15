@@ -84,6 +84,9 @@ class AskIn(BaseModel):
     due_at: str | None = None
     due_tz: str | None = None
     url: str | None = None
+    options: list[dict] | None = None
+    recommended: str | None = None
+    label: str = ""
     idempotency_key: str | None = None
 
 
@@ -110,6 +113,7 @@ class CloseIn(BaseModel):
 class AnswerIn(BaseModel):
     resolution: str
     note: str = ""
+    option_id: str | None = None
 
 
 class SnoozeIn(BaseModel):
@@ -652,12 +656,23 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         return {"outcome": outcome, "ask": inbox_view.ask_card(ws.svc, a)}
 
     @app.get("/api/asks")
-    def my_asks(status: str | None = None, who: str = Depends(principal)):
-        """The owner sees every ask; an agent sees only its own, with the owner's answer once there is one."""
+    def my_asks(status: str | None = None, since: str | None = None, who: str = Depends(principal)):
+        """The owner sees every ask; an agent sees only its own, with the owner's answer once there is one.
+        `since` (ISO time) lists items created or changed after it."""
         if status not in (None, "open", "closed", "all"):
             raise Invalid("status must be open, closed or all")
+        if since:
+            try:
+                datetime.fromisoformat(since)
+            except ValueError:
+                raise Invalid("since must be an ISO time like 2026-11-12T09:00:00+00:00") from None
         with ws.store.lock:
-            return inbox_view.asks_for(ws.svc, who, status)
+            return inbox_view.asks_for(ws.svc, who, status, since)
+
+    @app.get("/api/asks/{ask_id}")
+    def one_ask(ask_id: str, who: str = Depends(principal)):
+        with ws.store.lock:
+            return inbox_view.ask_for(ws.svc, who, ask_id)
 
     @app.get("/api/inbox")
     def inbox(_: str = Depends(owner)):
@@ -788,7 +803,8 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
         if body.event_type == "ask_created":
             a, outcome = svc.create_ask(who, project_id=body.project_id or None, idempotency_key=key,
                                         **{k: p[k] for k in ("title", "kind", "text", "blocked", "cost_of_waiting",
-                                                             "urgency", "task_id", "due_at", "due_tz", "url") if k in p})
+                                                             "urgency", "task_id", "due_at", "due_tz", "url", "options",
+                                                             "recommended", "label") if k in p})
             return {"outcome": outcome, "ask": inbox_view.ask_card(svc, a)}
         if body.event_type == "decision_resolved":
             return {"decision": views.decision_card(svc.resolve_decision(who, p.get("id", ""), status=p.get("status", ""),
