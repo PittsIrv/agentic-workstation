@@ -14,7 +14,7 @@ It runs on your machine, stores everything in one SQLite file, and uses the Clau
 
 ## What you get
 
-- **Home:** one screen, top to bottom: what needs you now (answer in place), where your time went, what each agent is working on and waiting for, and a place for spend. Tasks, threads and projects follow. A new install opens with a **Get started** strip.
+- **Home (from 2026-11-14):** the decision queue, with what waits for you as cards (options side by side with cost, risk and what happens after, the agent's recommendation, one click to choose, or write your own answer). **Managers**, with the earlier Home as **Overview**, are in the navigation. Overview, top to bottom: what needs you now (answer in place), where your time went, what each agent is working on and waiting for, and a place for spend. Tasks, threads and projects follow. A new install opens with a **Get started** strip.
 - **One navigation:** Home, Inbox, Decisions, Tasks, Threads, Review, Time, Activity, Set up. The same row and buttons answer an inbox item, a decision or a task in review, on Home or on its own page.
 - **Threads:** `@claude` and `@gpt` mentions. Each reply shows which posts the agent saw. One critique round per thread, and a budget of agent turns.
 - **Decision cards:** options with each agent's position. Near-duplicate options from the agents are merged and show both sources. Only the owner can approve, reject or defer. An approval creates one engineering task. The resolved card exports as a [decision record](#decision-records) for your repo.
