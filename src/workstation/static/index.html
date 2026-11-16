@@ -410,7 +410,7 @@ function optionCards(e) {
   return `<div class="optgrid">${e.options.map(o => `<div class="optc${o.id === e.recommended ? " rec" : ""}${e.option_id === o.id ? " chosen" : ""}">
     <div><b>${esc(o.label)}</b> ${o.id === e.recommended ? pill(who_name(e.asked_by) + " recommends", "ok") : ""}${e.option_id === o.id ? pill("your choice", "run") : ""}</div>
     <dl>${o.cost ? `<div><dt>Cost: </dt><dd>${esc(o.cost)}</dd></div>` : ""}${o.risk ? `<div><dt>Risk: </dt><dd>${esc(o.risk)}</dd></div>` : ""}${o.after ? `<div><dt>Then: </dt><dd>${esc(o.after)}</dd></div>` : ""}</dl>
-    ${open ? `<div class="btn-row"><button class="primary" data-ans="${esc(e.id)}" data-res="answered" data-opt="${esc(o.id)}">Choose this</button></div>` : ""}</div>`).join("")}</div>`;
+    ${open ? `<div class="btn-row"><button class="primary" data-ans="${esc(e.id)}" data-res="answered" data-label="choice" data-opt="${esc(o.id)}">Choose this</button></div>` : ""}</div>`).join("")}</div>`;
 }
 const who_name = id => NAMES[id] || id;
 function askRow(e) {
