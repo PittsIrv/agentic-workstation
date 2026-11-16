@@ -37,7 +37,9 @@ def ask_card(svc: Service, a: dict) -> dict:
         "due_at": a.get("due_at"), "due_tz": a.get("due_tz"), "url": a.get("url"), "status": a["status"],
         "created_at": a["created_at"], "resolution": a.get("resolution"), "note": a.get("note"),
         "closed_by": a.get("closed_by"), "closed_at": a.get("closed_at"), "version": a["version"],
-        "discussion_id": a.get("discussion_id"),
+        "discussion_id": a.get("discussion_id"), "options": a.get("options") or [],
+        "recommended": a.get("recommended"), "label": a.get("label") or "", "option_id": a.get("option_id"),
+        "updated_at": a.get("updated_at"),
         "link": f"#/discussions/{a['discussion_id']}" if a.get("discussion_id") else "#/inbox",
     }
 
@@ -97,12 +99,24 @@ def inbox(svc: Service, now: datetime) -> dict:
             "answered": [ask_card(svc, a) for a in closed[:RECENT_ANSWERED]]}
 
 
-def asks_for(svc: Service, who: str, status: str | None) -> list[dict]:
-    """The asks a caller may see: the owner sees all, an agent only its own (including the owner's answer)."""
+def asks_for(svc: Service, who: str, status: str | None, since: str | None = None) -> list[dict]:
+    """The asks a caller may see: the owner sees all, an agent only its own (including the owner's answer).
+    `since` (an ISO time) keeps items created or changed at or after it
+    (times have one-second resolution, so the boundary item may repeat; a reader must not miss one)."""
     human = AGENTS.get(who, {}).get("kind") == "human"
     rows = [a for a in svc.s.asks.values() if (human or a["asked_by"] == who)
-            and (not status or status == "all" or (a["status"] == "open") == (status == "open"))]
+            and (not status or status == "all" or (a["status"] == "open") == (status == "open"))
+            and (not since or _dt(a["updated_at"]) >= _dt(since))]
     return [ask_card(svc, a) for a in sorted(rows, key=lambda a: a["created_at"], reverse=True)]
+
+
+def ask_for(svc: Service, who: str, ask_id: str) -> dict:
+    """One item by id. An agent asking for someone else's item gets the same 'not found' as for an unknown id."""
+    from .service import NotFound
+    a = svc.s.asks.get(ask_id)
+    if not a or not (AGENTS.get(who, {}).get("kind") == "human" or a["asked_by"] == who):
+        raise NotFound(f"ask {ask_id}")
+    return ask_card(svc, a)
 
 
 def agent_work(svc: Service) -> list[dict]:

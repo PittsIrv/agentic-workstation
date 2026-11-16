@@ -32,6 +32,11 @@ ASK_KINDS = ("decision", "review", "approval", "question")
 ASK_URGENCY = ("low", "normal", "high")
 ASK_LIMITS = {"title": 200, "text": 2000, "blocked": 300, "cost_of_waiting": 300, "note": 2000}
 DEFAULT_MAX_OPEN_ASKS = 20
+# Structured asks: an ask of kind decision or question may carry options. Limits are this project's defaults.
+ASK_OPTION_KINDS = ("decision", "question")
+ASK_OPTION_MIN, ASK_OPTION_MAX = 2, 6
+ASK_OPTION_LIMITS = {"label": 80, "cost": 200, "risk": 200, "after": 200}
+ASK_LABEL_MAX = 60
 ASK_RESOLUTIONS = {"approval": ("approved", "declined", "dismissed")}
 ASK_RESOLUTIONS_OTHER = ("answered", "dismissed")
 
@@ -368,12 +373,18 @@ class Service:
     def create_ask(self, actor: str, *, title: str, kind: str = "question", text: str = "", blocked: str = "",
                    cost_of_waiting: str = "", urgency: str = "normal", project_id: str | None = None,
                    task_id: str | None = None, due_at: str | None = None, due_tz: str | None = None,
-                   url: str | None = None, discussion_id: str | None = None,
+                   url: str | None = None, discussion_id: str | None = None, options: list[dict] | None = None,
+                   recommended: str | None = None, label: str = "",
                    idempotency_key: str | None = None) -> tuple[dict, str]:
-        """An agent says "this needs you". Returns (ask, outcome) with outcome created | duplicate."""
+        """An agent says "this needs you". Returns (ask, outcome) with outcome created | duplicate.
+
+        `options` (decision and question only) are 2-6 dicts with label, and optionally cost, risk and after (what
+        happens after choosing it); `recommended` is the label of the option the agent prefers; `label` is a short
+        project or ticket tag such as "T-0094"."""
         fp = self._fp(op="ask", actor=actor, title=title, kind=kind, text=text, blocked=blocked,
                       cost_of_waiting=cost_of_waiting, urgency=urgency, project_id=project_id, task_id=task_id,
-                      due_at=due_at, due_tz=due_tz, url=url, discussion_id=discussion_id)
+                      due_at=due_at, due_tz=due_tz, url=url, discussion_id=discussion_id, options=options,
+                      recommended=recommended, label=label)
         if (dup := self._dup(idempotency_key, "ask_created", fp=fp)):
             return self._ask(dup["payload"]["id"]), "duplicate"
         if not can(actor, "ask_owner", project_id):
@@ -387,6 +398,9 @@ class Service:
             raise Invalid("title is required")
         if kind not in ASK_KINDS:
             raise Invalid(f"kind must be one of {list(ASK_KINDS)}")
+        if not isinstance(label, str) or len(label) > ASK_LABEL_MAX:
+            raise Invalid(f"label must be text of at most {ASK_LABEL_MAX} characters")
+        opts, rec_id = self._ask_options(kind, options, recommended)
         if urgency not in ASK_URGENCY:
             raise Invalid(f"urgency must be one of {list(ASK_URGENCY)}")
         self._need_project(project_id)
@@ -404,12 +418,46 @@ class Service:
         self.store.append("ask_created", actor, {
             "id": aid, "title": title.strip(), "kind": kind, "text": text, "blocked": blocked,
             "cost_of_waiting": cost_of_waiting, "urgency": urgency, "project_id": project_id, "task_id": task_id,
-            "due_at": due_at, "due_tz": due_tz, "url": url, "discussion_id": discussion_id},
+            "due_at": due_at, "due_tz": due_tz, "url": url, "discussion_id": discussion_id,
+            "options": opts, "recommended": rec_id, "label": label.strip()},
             idempotency_key=idempotency_key, project_id=project_id, request_hash=fp)
         return self.s.asks[aid], "created"
 
+    @staticmethod
+    def _ask_options(kind: str, options: list[dict] | None, recommended: str | None) -> tuple[list[dict], str | None]:
+        if not options:
+            if recommended:
+                raise Invalid("recommended names an option, but the item has none")
+            return [], None
+        if kind not in ASK_OPTION_KINDS:
+            raise Invalid(f"options are for items of kind {list(ASK_OPTION_KINDS)}, not {kind}")
+        if not isinstance(options, list) or not ASK_OPTION_MIN <= len(options) <= ASK_OPTION_MAX:
+            raise Invalid(f"give {ASK_OPTION_MIN} to {ASK_OPTION_MAX} options")
+        out = []
+        for i, o in enumerate(options):
+            if not isinstance(o, dict):
+                raise Invalid("each option is an object with a label")
+            rec = {}
+            for k, limit in ASK_OPTION_LIMITS.items():
+                v = o.get(k) or ""
+                if not isinstance(v, str) or len(v) > limit:
+                    raise Invalid(f"option {k} must be text of at most {limit} characters")
+                rec[k] = v.strip()
+            if not rec["label"]:
+                raise Invalid("each option needs a label")
+            out.append({"id": f"o{i + 1}", **rec})
+        if len({o["label"].lower() for o in out}) != len(out):
+            raise Invalid("option labels must differ")
+        rec_id = None
+        if recommended:
+            hit = [o["id"] for o in out if recommended.strip().lower() in (o["label"].lower(), o["id"])]
+            if not hit:
+                raise Invalid("recommended must be the label of one of the options")
+            rec_id = hit[0]
+        return out, rec_id
+
     @atomic
-    def answer_ask(self, actor: str, ask_id: str, *, resolution: str, note: str = "") -> dict:
+    def answer_ask(self, actor: str, ask_id: str, *, resolution: str, note: str = "", option_id: str | None = None) -> dict:
         if not is_human(actor):
             raise Forbidden("only the owner answers items in the inbox")
         a = self._ask(ask_id)
@@ -420,9 +468,15 @@ class Service:
             raise Invalid(f"a {a['kind']} is closed with one of {list(allowed)}")
         if not isinstance(note, str) or len(note) > ASK_LIMITS["note"]:
             raise Invalid(f"note must be text of at most {ASK_LIMITS['note']} characters")
-        if resolution == "answered" and not note.strip():
-            raise Invalid("an answer needs text")
-        self.store.append("ask_answered", actor, {"id": ask_id, "resolution": resolution, "note": note},
+        if option_id is not None:
+            if resolution != "answered":
+                raise Invalid("an option is chosen with resolution answered")
+            if option_id not in [o["id"] for o in a.get("options") or []]:
+                raise Invalid("option_id is not one of this item's options")
+        elif resolution == "answered" and not note.strip():
+            raise Invalid("an answer needs text or a chosen option")
+        self.store.append("ask_answered", actor, {"id": ask_id, "resolution": resolution, "note": note,
+                                                  **({"option_id": option_id} if option_id else {})},
                           project_id=a.get("project_id"))
         return a
 

@@ -119,13 +119,20 @@ def main(argv=None) -> None:
     s.add_argument("--project", default=None); s.add_argument("--task", default=None); s.add_argument("--url", default=None)
     s.add_argument("--due", default=None, help="ISO 8601 deadline with a UTC offset (2026-11-12T17:00:00-05:00), or without one plus --due-tz"); s.add_argument("--due-tz", default=None)
     s.add_argument("--key", default=None, help="idempotency key: resubmitting with it returns the same item")
+    s.add_argument("--option", action="append", default=[], metavar="LABEL[|COST|RISK|AFTER]",
+                   help="an option (repeat 2-6 times; kind decision or question). Fields after the label are optional, split by |")
+    s.add_argument("--recommend", default=None, help="label of the option you recommend")
+    s.add_argument("--label", default="", help="short project or ticket tag, e.g. T-0094")
     s = sub.add_parser("asks", help="items submitted for the owner and their answers")
     s.add_argument("--as", dest="who", default=None); s.add_argument("--status", default="open", choices=["open", "closed", "all"])
     s.add_argument("--inbox", action="store_true", help="owner only: the whole inbox, most urgent first")
+    s.add_argument("--since", default=None, help="only items created or changed after this ISO time")
+    s.add_argument("--id", dest="ask_id", default=None, help="one item by id")
     s = sub.add_parser("answer", help="owner: answer an item")
     s.add_argument("ask_id"); s.add_argument("--as", dest="who", default=None)
     s.add_argument("--resolution", default="answered", choices=["answered", "approved", "declined", "dismissed"])
     s.add_argument("--note", default="")
+    s.add_argument("--option", dest="option_id", default=None, help="id of the chosen option (o1, o2, ...)")
     s = sub.add_parser("now", help="what needs the owner now, with why (an agent sees only its own items and whether the owner is already loaded)")
     s.add_argument("--as", dest="who", default=None); s.add_argument("--full", action="store_true", help="owner only: include the full cards")
     s = sub.add_parser("remind", help="owner: print (and with --notify raise a local notification for) reminders that are due, and record them")
@@ -291,14 +298,19 @@ def main(argv=None) -> None:
         body = {"title": args.title, "kind": args.kind, "text": sys.stdin.read() if args.text == "-" else args.text,
                 "blocked": args.blocked, "cost_of_waiting": args.cost, "urgency": args.urgency,
                 "project_id": args.project, "task_id": args.task, "url": args.url, "due_at": args.due,
-                "due_tz": args.due_tz, "idempotency_key": args.key}
+                "due_tz": args.due_tz, "idempotency_key": args.key, "recommended": args.recommend, "label": args.label,
+                "options": [dict(zip(("label", "cost", "risk", "after"), o.split("|"))) for o in args.option] or None}
         out(client(args, args.who).post("/api/asks", json=body))
     elif args.cmd == "asks":
         c = client(args, args.who)
-        out(c.get("/api/inbox") if args.inbox else c.get("/api/asks", params={"status": args.status}))
+        if args.ask_id:
+            out(c.get(f"/api/asks/{args.ask_id}"))
+        else:
+            out(c.get("/api/inbox") if args.inbox else
+                c.get("/api/asks", params={"status": args.status, **({"since": args.since} if args.since else {})}))
     elif args.cmd == "answer":
         out(client(args, args.who).post(f"/api/asks/{args.ask_id}/answer",
-                                        json={"resolution": args.resolution, "note": args.note}))
+                                        json={"resolution": args.resolution, "note": args.note, "option_id": args.option_id}))
     elif args.cmd == "discuss":
         out(client(args, args.who).post("/api/discussions", json={
             "title": args.title, "text": sys.stdin.read() if args.text == "-" else args.text, "stance": args.stance,
