@@ -24,6 +24,11 @@ uv --directory WORKSTATION_DIR run ws --data WORKSTATION_DIR/data ask "<what you
 - Options (for `decision` and `question`): repeat `--option "LABEL|COST|RISK|WHAT HAPPENS AFTER"` (2 to 6; only the label is
   required), mark your suggestion with `--recommend "LABEL"`, name the project or ticket with `--label "T-0094"`.
   Read the answer with `... ws --data WORKSTATION_DIR/data asks --as claude --id <ask-id>` (`option_id` is the chosen option) or `asks --since <ISO time with UTC offset>`.
+- Block until the answer comes, when nothing else can proceed without it:
+  `... ws --data WORKSTATION_DIR/data wait <ask-id> --as claude --timeout 120`. It returns as soon as the person
+  answers and prints the item. Exit status: `0` answered (read `resolution`, `option_id`, `note`), `3` still open after
+  the timeout (run it again, or do other work), `4` you withdrew it, `1` an error. Keep `--timeout` (seconds, default
+  300) under your own command time limit. You can wait only on your own items.
 - Everything you submit is shown as plain text. Never include secrets.
 
 ## Before you interrupt, and what happened to your items

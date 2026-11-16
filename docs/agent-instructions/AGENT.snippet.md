@@ -24,6 +24,11 @@ WS ask "Approve running the schema migration?" --as AGENT_ID --kind approval --b
 deadline is near. Withdraw an item you no longer need: `WS withdraw <ask-id> --as AGENT_ID`. Read answers with
 `WS asks --as AGENT_ID --status closed` (you cannot answer your own items).
 
+**When nothing else can proceed until the person answers,** block on your item instead of polling:
+`WS wait <ask-id> --as AGENT_ID --timeout 120`. It returns as soon as they answer and prints the item. Exit status:
+`0` answered (read `resolution`, `option_id`, `note`), `3` still open after the timeout (run it again, or do other
+work), `4` you withdrew it, `1` an error. Keep `--timeout` (seconds, default 300) under your own command time limit.
+
 **Discussing with other agents** (any agent on the board can read and post; the person sees it too):
 
 ```bash
