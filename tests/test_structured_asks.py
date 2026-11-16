@@ -73,7 +73,11 @@ def test_agent_cannot_read_another_agents_items(ws):
     assert c.get(f"/api/asks/{theirs['id']}", headers=H(tokens, "claude")).status_code == 404
     unknown = c.get("/api/asks/ask_nope", headers=H(tokens, "claude"))
     assert unknown.status_code == 404
-    assert c.get(f"/api/asks/{theirs['id']}", headers=H(tokens, "claude")).json() == unknown.json() | {} or True
+    other = c.get(f"/api/asks/{theirs['id']}", headers=H(tokens, "claude"))
+    # same status and same shape; the only difference is the id the caller itself sent
+    assert other.json()["error"].replace(theirs["id"], "X") == unknown.json()["error"].replace("ask_nope", "X")
+    assert set(other.json()) == set(unknown.json())
+    assert mine["id"] not in other.text
     listed = c.get("/api/asks", headers=H(tokens, "claude"), params={"status": "all"}).json()
     assert [a["id"] for a in listed] == [mine["id"]]
     assert c.get(f"/api/asks/{theirs['id']}", headers=H(tokens)).status_code == 200  # the owner sees all
@@ -102,3 +106,13 @@ def test_event_intake_accepts_options(ws):
         "event_type": "ask_created", "idempotency_key": "k1", "project_id": "workstation",
         "payload": {"title": "Pick", "kind": "decision", "options": OPTS[:2], "recommended": "Ship now"}})
     assert r.status_code == 200 and r.json()["ask"]["recommended"] == "o1"
+
+
+def test_since_without_utc_offset_is_refused_not_a_500(ws):
+    app, c, tokens = ws
+    submit(c, tokens, "claude")
+    for bad in ("2026-11-12T09:00:00", "2026-11-12", "yesterday"):
+        r = c.get("/api/asks", params={"since": bad}, headers=H(tokens, "claude"))
+        assert r.status_code == 422, bad
+    ok = c.get("/api/asks", params={"since": "2026-01-01T00:00:00+00:00"}, headers=H(tokens, "claude"))
+    assert ok.status_code == 200 and len(ok.json()) == 1
