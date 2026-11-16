@@ -380,7 +380,7 @@ class Service:
 
         `options` (decision and question only) are 2-6 dicts with label, and optionally cost, risk and after (what
         happens after choosing it); `recommended` is the label of the option the agent prefers; `label` is a short
-        project or ticket tag such as "T-0094"."""
+        project or ticket tag such as "PROJ-12"."""
         fp = self._fp(op="ask", actor=actor, title=title, kind=kind, text=text, blocked=blocked,
                       cost_of_waiting=cost_of_waiting, urgency=urgency, project_id=project_id, task_id=task_id,
                       due_at=due_at, due_tz=due_tz, url=url, discussion_id=discussion_id, options=options,

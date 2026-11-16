@@ -10,7 +10,7 @@ OPTS = [{"label": "Ship now", "cost": "$0", "risk": "untested on Linux", "after"
 
 def submit(c, tokens, who="claude", **kw):
     body = {"title": "Release the billing change?", "kind": "decision", "text": "CI is green on macOS only.",
-            "options": OPTS, "recommended": "Wait a day", "label": "T-0094", **kw}
+            "options": OPTS, "recommended": "Wait a day", "label": "PROJ-12", **kw}
     return c.post("/api/asks", headers=H(tokens, who), json=body)
 
 
@@ -18,7 +18,7 @@ def test_agent_submits_three_options_and_owner_picks_one(ws):
     app, c, tokens = ws
     ask = submit(c, tokens).json()["ask"]
     assert [o["id"] for o in ask["options"]] == ["o1", "o2", "o3"]
-    assert ask["options"][0]["risk"] == "untested on Linux" and ask["recommended"] == "o2" and ask["label"] == "T-0094"
+    assert ask["options"][0]["risk"] == "untested on Linux" and ask["recommended"] == "o2" and ask["label"] == "PROJ-12"
     item = [i for i in c.get("/api/inbox", headers=H(tokens)).json()["items"] if i["id"] == ask["id"]][0]
     assert item["options"][1]["label"] == "Wait a day" and item["recommended"] == "o2"
     r = c.post(f"/api/asks/{ask['id']}/answer", headers=H(tokens), json={"resolution": "answered", "option_id": "o2"})

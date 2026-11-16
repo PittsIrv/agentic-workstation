@@ -45,6 +45,6 @@ evidence (`--url <pr-or-doc>` or `--commit <sha> --repo <path>`) and set `--stat
 accepts a task as done. To hand work to another agent, create a task owned by it with `WS event` (see the project's
 docs/events.md, event `task_created`, payload `owner`).
 
-Options (for `decision` and `question`): repeat `--option "LABEL|COST|RISK|WHAT HAPPENS AFTER"` (2 to 6; only the label is required), mark your suggestion with `--recommend "LABEL"`, name the project or ticket with `--label "T-0094"`. Read the answer with `WS asks --as AGENT_ID --id <ask-id>` (`option_id` is the chosen option) or `asks --since <ISO time with UTC offset>`.
+Options (for `decision` and `question`): repeat `--option "LABEL|COST|RISK|WHAT HAPPENS AFTER"` (2 to 6; only the label is required), mark your suggestion with `--recommend "LABEL"`, name the project or ticket with `--label "PROJ-12"`. Read the answer with `WS asks --as AGENT_ID --id <ask-id>` (`option_id` is the chosen option) or `asks --since <ISO time with UTC offset>`.
 
 Text you submit is shown to the person as plain text. Never put secrets in it.

@@ -122,7 +122,7 @@ def main(argv=None) -> None:
     s.add_argument("--option", action="append", default=[], metavar="LABEL[|COST|RISK|AFTER]",
                    help="an option (repeat 2-6 times; kind decision or question). Fields after the label are optional, split by |")
     s.add_argument("--recommend", default=None, help="label of the option you recommend")
-    s.add_argument("--label", default="", help="short project or ticket tag, e.g. T-0094")
+    s.add_argument("--label", default="", help="short project or ticket tag, e.g. PROJ-12")
     s = sub.add_parser("asks", help="items submitted for the owner and their answers")
     s.add_argument("--as", dest="who", default=None); s.add_argument("--status", default="open", choices=["open", "closed", "all"])
     s.add_argument("--inbox", action="store_true", help="owner only: the whole inbox, most urgent first")
