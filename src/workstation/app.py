@@ -663,9 +663,11 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
             raise Invalid("status must be open, closed or all")
         if since:
             try:
-                datetime.fromisoformat(since)
+                parsed = datetime.fromisoformat(since)
             except ValueError:
-                raise Invalid("since must be an ISO time like 2026-11-12T09:00:00+00:00") from None
+                parsed = None
+            if parsed is None or parsed.tzinfo is None:
+                raise Invalid("since must be an ISO time with a UTC offset, like 2026-11-12T09:00:00+00:00")
         with ws.store.lock:
             return inbox_view.asks_for(ws.svc, who, status, since)
 

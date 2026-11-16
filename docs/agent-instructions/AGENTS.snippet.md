@@ -23,6 +23,9 @@ uv --directory WORKSTATION_DIR run ws --data WORKSTATION_DIR/data ask "Approve r
   `... ws --data WORKSTATION_DIR/data withdraw <ask-id> --as gpt`.
 - Check for answers later: `... ws --data WORKSTATION_DIR/data asks --as gpt --status closed`. Read `resolution`
   (`answered`, `approved`, `declined`, `dismissed`) and `note`. You cannot answer your own items.
+- Options (for `decision` and `question`): repeat `--option "LABEL|COST|RISK|WHAT HAPPENS AFTER"` (2 to 6; only the label is
+  required), mark your suggestion with `--recommend "LABEL"`, name the project or ticket with `--label "T-0094"`.
+  Read the answer with `... ws --data WORKSTATION_DIR/data asks --as gpt --id <ask-id>` (`option_id` is the chosen option) or `asks --since <ISO time with UTC offset>`.
 - Text you submit is shown to the person as plain text. Never put secrets in it.
 
 ## Before you interrupt, and what happened to your items
