@@ -8,6 +8,7 @@ Fixtures only: no real Claude or Codex call.
 """
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -182,6 +183,15 @@ def site(tmp_path_factory, fake_daybook):
             "title": HOSTILE[:200], "kind": kind, "text": HOSTILE, "blocked": HOSTILE[:300],
             "cost_of_waiting": HOSTILE[:300], "urgency": "high", "project_id": "general",
             "url": BAD_URL}).raise_for_status()
+    # structured items: hostile text in every option field, the recommendation and the label; one open, one answered
+    opts = [{"label": HOSTILE[:80], "cost": HOSTILE[:200], "risk": HOSTILE[:200], "after": HOSTILE[:200]},
+            {"label": "Safe", "cost": HOSTILE[:200]}, {"label": HOSTILE[80:160] or "Other"}]
+    for n in range(2):
+        pick = http.post("/api/asks", headers={"Authorization": f"Bearer {agent_tokens['gpt']}"}, json={
+            "title": HOSTILE[:200], "kind": "decision", "text": HOSTILE, "options": opts, "recommended": HOSTILE[:80],
+            "label": HOSTILE[:60], "urgency": "high", "project_id": "general", "url": BAD_URL, "task_id": task["id"]})
+        pick.raise_for_status()
+    http.post(f"/api/asks/{pick.json()['ask']['id']}/answer", json={"resolution": "answered", "option_id": "o1", "note": HOSTILE[:300]}).raise_for_status()
     # reminders: every due item is reminded (hostile titles go into the log), then one is snoozed
     http.post("/api/reminders/run", json={"channel": "print"}).raise_for_status()
     snoozed = http.get("/api/needs-now").json()["items"][-1]["key"]
@@ -207,7 +217,7 @@ def site(tmp_path_factory, fake_daybook):
               json={"outcome": "sent_to_user", "note": HOSTILE[:500]}).raise_for_status()
     profile = tmp_path_factory.mktemp("profile")
     yield {"base": base, "http": http, "profile": profile,
-           "pages": {"home": "#/", "overview": "#/overview", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
+           "pages": {"home": "#/", "managers": "#/managers", "overview": "#/overview", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
                      "task": f"#/tasks/{task['id']}", "decision": f"#/decisions/{dec['id']}", "resolved": f"#/decisions/{done['id']}",
                      "activity": "#/activity", "review": "#/review", "inbox": "#/inbox", "time": "#/time", "decisions": "#/decisions", "setup": "#/setup", "discussions": "#/discussions",
                      "discussion": f"#/discussions/{disc['id']}"}, "record": record, "review_md": review_md}
@@ -238,7 +248,7 @@ def inspect(html):
     return dom
 
 
-@pytest.mark.parametrize("name", ["home", "overview", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox", "time", "decisions", "setup", "discussions", "discussion"])
+@pytest.mark.parametrize("name", ["home", "managers", "overview", "threads", "thread", "tasks", "task", "decision", "resolved", "activity", "review", "inbox", "time", "decisions", "setup", "discussions", "discussion"])
 def test_hostile_text_stays_inert(site, name):
     html = dump(site, site["pages"][name])
     dom = inspect(html)
@@ -299,10 +309,25 @@ def test_a_discussion_between_agents_is_visible_in_the_front_end(site):
     assert "2 message(s)" in listing and "Sent to you" in listing
 
 
-def test_the_default_page_shows_manager_conversations_and_folds_lower_level_work(site):
+def test_home_is_the_decision_queue_with_option_cards(site):
+    """Home leads with what waits for the owner: option cards side by side, one recommended, one-click choose buttons,
+    a link to the task, the chosen option in the answered list. Hostile option text is plain text."""
+    html = dump(site, site["pages"]["home"]).split("<script")[0]  # the rendered page, not the script source
+    page = " ".join(inspect(html).text)
+    assert "Waiting for your decision" in page and "Your managers" not in page
+    assert html.count('class="optc rec"') >= 1 and html.count('class="optgrid"') >= 1
+    assert html.count('data-opt="o1"') >= 1 and html.count('data-opt="o2"') >= 1 and html.count('data-opt="o3"') >= 1
+    assert re.search(r'<button class="primary" data-ans="[^"]+" data-res="answered" data-label="choice" data-opt="o1"', html), \
+        "choosing an option is two-step (select, then confirm), like approvals"
+    assert "recommends" in page and "Cost:" in page and "Risk:" in page and "Then:" in page
+    assert "Recently answered" in page and "answered: " in page  # the answered item shows the chosen option
+    assert re.search(r'href="#/tasks/task_[^"]+">task</a>', html)
+    assert page.count("onerror") >= 8
+
+
+def test_the_managers_page_shows_manager_conversations_and_folds_lower_level_work(site):
     """DOM assertion: managers by name and level, their conversations, and lower-level work inside closed <details>."""
-    import re
-    html = dump(site, site["pages"]["home"])
+    html = dump(site, site["pages"]["managers"])
     dom = inspect(html)
     assert "Your managers" in " ".join(dom.text) and "level 3" in " ".join(dom.text)
     cards = re.findall(r'<div class="card mgr" data-manager="([a-z0-9-]+)"', html)
@@ -314,3 +339,39 @@ def test_the_default_page_shows_manager_conversations_and_folds_lower_level_work
     assert "1 open task" in summary and "1 queued" in summary  # a count and a one-line status
     assert "Talk to an agent" in " ".join(dom.text)
     assert 'id="talk"' in html
+
+
+@pytest.fixture(scope="module")
+def bare_site(tmp_path_factory):
+    """A server with nothing in it, for the first-run screen. Last in the file: the agent table is process-wide, so
+    building a second app must not run before the tests of the first."""
+    import httpx
+    data = tmp_path_factory.mktemp("bare")
+    app = create_app(data, {"claude": Fake(lambda p: "ok"), "gpt": Fake(lambda p: "ok"), "gemini": Unconnected("not connected")})
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    base = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
+    thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
+    thread.start()
+    for _ in range(100):
+        if server.started:
+            break
+        time.sleep(0.1)
+    token = app.state.ws.owner_file.read_text()
+    http = httpx.Client(base_url=base, headers={"Authorization": f"Bearer {token}", "X-Workstation": "1", "Origin": base})
+    yield {"base": base, "http": http, "profile": tmp_path_factory.mktemp("bareprofile")}
+    server.should_exit = True
+    thread.join(timeout=10)
+    app.state.ws.close()
+
+
+def test_empty_queue_says_so_and_shows_how_to_submit(bare_site):
+    """With nothing ever submitted, Home says nothing waits and shows the command that submits a first item."""
+    html = dump(bare_site, "#/").split("<script")[0]
+    page = " ".join(inspect(html).text)
+    assert "Nothing is waiting on you" in page and "Try it" in page
+    assert re.search(r'<pre class="cmd">[^<]*ws[^<]*ask', html), "the submit command is shown"
+    assert 'class="optc' not in html
+    assert 'class="ib' not in html, "no item cards on an empty queue"
+
