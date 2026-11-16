@@ -317,6 +317,8 @@ def test_home_is_the_decision_queue_with_option_cards(site):
     assert "Waiting for your decision" in page and "Your managers" not in page
     assert html.count('class="optc rec"') >= 1 and html.count('class="optgrid"') >= 1
     assert html.count('data-opt="o1"') >= 1 and html.count('data-opt="o2"') >= 1 and html.count('data-opt="o3"') >= 1
+    assert re.search(r'<button class="primary" data-ans="[^"]+" data-res="answered" data-label="choice" data-opt="o1"', html), \
+        "choosing an option is two-step (select, then confirm), like approvals"
     assert "recommends" in page and "Cost:" in page and "Risk:" in page and "Then:" in page
     assert "Recently answered" in page and "answered: " in page  # the answered item shows the chosen option
     assert re.search(r'href="#/tasks/task_[^"]+">task</a>', html)
@@ -337,3 +339,39 @@ def test_the_managers_page_shows_manager_conversations_and_folds_lower_level_wor
     assert "1 open task" in summary and "1 queued" in summary  # a count and a one-line status
     assert "Talk to an agent" in " ".join(dom.text)
     assert 'id="talk"' in html
+
+
+@pytest.fixture(scope="module")
+def bare_site(tmp_path_factory):
+    """A server with nothing in it, for the first-run screen. Last in the file: the agent table is process-wide, so
+    building a second app must not run before the tests of the first."""
+    import httpx
+    data = tmp_path_factory.mktemp("bare")
+    app = create_app(data, {"claude": Fake(lambda p: "ok"), "gpt": Fake(lambda p: "ok"), "gemini": Unconnected("not connected")})
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    base = f"http://127.0.0.1:{sock.getsockname()[1]}"
+    server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
+    thread = threading.Thread(target=lambda: server.run(sockets=[sock]), daemon=True)
+    thread.start()
+    for _ in range(100):
+        if server.started:
+            break
+        time.sleep(0.1)
+    token = app.state.ws.owner_file.read_text()
+    http = httpx.Client(base_url=base, headers={"Authorization": f"Bearer {token}", "X-Workstation": "1", "Origin": base})
+    yield {"base": base, "http": http, "profile": tmp_path_factory.mktemp("bareprofile")}
+    server.should_exit = True
+    thread.join(timeout=10)
+    app.state.ws.close()
+
+
+def test_empty_queue_says_so_and_shows_how_to_submit(bare_site):
+    """With nothing ever submitted, Home says nothing waits and shows the command that submits a first item."""
+    html = dump(bare_site, "#/").split("<script")[0]
+    page = " ".join(inspect(html).text)
+    assert "Nothing is waiting on you" in page and "Try it" in page
+    assert re.search(r'<pre class="cmd">[^<]*ws[^<]*ask', html), "the submit command is shown"
+    assert 'class="optc' not in html
+    assert 'class="ib' not in html, "no item cards on an empty queue"
+
