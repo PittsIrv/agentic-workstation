@@ -68,6 +68,7 @@ pre.cmd{font:12.5px/1.45 var(--mono);background:var(--bg);border:1px solid var(-
 .optc{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;min-width:0;overflow-wrap:anywhere} .optc.rec{border-color:var(--ok);border-width:2px}
 .optc dl{margin:0;font-size:12.5px} .optc dt{color:var(--mute);display:inline} .optc dd{display:inline;margin:0} .optc dd::after{content:"";display:block}
 .optc .btn-row{margin-top:auto;padding-top:4px} .chosen{border-color:var(--acc);border-width:2px}
+.grp{margin-bottom:18px} .grp>h3{font:500 14px/1.3 var(--font);margin:0 0 8px;padding-bottom:4px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:baseline;overflow-wrap:anywhere} .grp>h3 .cnt{font-size:12px;color:var(--mute);font-weight:400}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--mute);margin:8px 0} .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 </style>
 </head>
@@ -446,14 +447,17 @@ async function renderQueue() {
   const [ib, h] = await Promise.all([api("/api/inbox"), api("/api/home")]);
   PROJECTS = h.projects;
   const cnt = $("#inboxcnt"); cnt.textContent = ib.items.length; cnt.classList.toggle("ask", ib.items.length > 0);
-  $("#sub").textContent = ib.items.length ? "What your agents are waiting on you for, most urgent first." : "Nothing is waiting on you.";
+  const grouped = ib.groups.length > 1, byKey = Object.fromEntries(ib.items.map(e => [e.key, e]));
+  $("#sub").textContent = !ib.items.length ? "Nothing is waiting on you." : grouped ? "What your agents are waiting on you for, by project; the most urgent comes first." : "What your agents are waiting on you for, most urgent first.";
+  // With more than one project (or label) the cards are grouped under it; a single group needs no heading.
+  const queue = grouped ? ib.groups.map(g => `<div class="grp" data-group="${esc(g.key)}"><h3><span>${esc(g.name)}</span>${g.by === "label" ? " " + pill("label") : ""} <span class="cnt">${g.count}</span></h3>${g.items.map(k => inboxRow(byKey[k])).join("")}</div>`).join("") : ib.items.map(inboxRow).join("");
   const setup = h.first_item ? null : await api("/api/setup");
   const how = setup ? `<div class="card"><div><b>Nothing is waiting on you.</b> An agent that needs a decision, a review or an approval submits it here.</div>
     <div class="note">Try it: run this in a terminal (it needs a token for that agent; <a href="#/setup">Set up</a> creates one and has ready-made instructions for Claude Code, Codex and any other agent).</div>
     <pre class="cmd">${esc(setup.test_command)}</pre></div>` : `<div class="card"><span class="empty">Nothing is waiting on you. When an agent needs a decision, a review or an approval, it appears here. Agents are listed under <a href="#/managers">Managers</a>; to add one, open <a href="#/setup">Set up</a>.</span></div>`;
   const done = ib.answered.map(a => `<tr><td>${who(a.asked_by)}</td><td>${esc(a.title)}</td><td>${esc(answerText(a))}</td><td>${esc(fmt(a.closed_at))}</td></tr>`).join("");
   $("#view").innerHTML = `<section><h2>Waiting for your decision <span class="cnt">${ib.items.length}</span></h2>
-  ${ib.items.map(inboxRow).join("") || how}</section>
+  ${queue || how}</section>
   ${done ? `<section><h2>Recently answered</h2><div class="tablewrap"><table><tr><th>From</th><th>Item</th><th>Outcome</th><th>When</th></tr>${done}</table></div></section>` : ""}`;
 }
 async function renderInbox() {
