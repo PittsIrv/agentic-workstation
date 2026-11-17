@@ -6,7 +6,9 @@ writes must carry `X-Workstation: 1` and a same-origin `Origin`, so other sites 
 """
 from __future__ import annotations
 
+import asyncio
 import fcntl
+import math
 import re
 import secrets
 import shlex
@@ -18,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
@@ -43,6 +46,9 @@ from .tickets import TicketFile
 STATIC = Path(__file__).parent / "static"
 COOKIE = "ws_session"
 CLAIM_LEASE_S = 15 * 60  # a session claim that has not replied by then can be claimed again
+# Waiting for an answer (`GET /api/asks/<id>/wait`): one request holds for at most WAIT_MAX_S and looks at the item every
+# WAIT_POLL_S. Both are this project's defaults; `ws wait` repeats requests up to its own --timeout.
+WAIT_MAX_S, WAIT_DEFAULT_S, WAIT_POLL_S = 60.0, 30.0, 0.25
 
 
 class ThreadIn(BaseModel):
@@ -675,6 +681,27 @@ def create_app(data_dir: Path | str = "data", runners: dict[str, Runner] | None 
     def one_ask(ask_id: str, who: str = Depends(principal)):
         with ws.store.lock:
             return inbox_view.ask_for(ws.svc, who, ask_id)
+
+    @app.get("/api/asks/{ask_id}/wait")
+    async def wait_ask(ask_id: str, request: Request, timeout: float = WAIT_DEFAULT_S, who: str = Depends(principal)):
+        """Long-poll for the answer: returns as soon as the item is no longer open (the owner answered it, or its agent
+        withdrew it), or after `timeout` seconds (0 to WAIT_MAX_S) with the item still open. `outcome` is answered,
+        withdrawn or timeout. Authorised exactly like reading the item: an agent waits only on its own, and another
+        agent's id gets the same 'not found' as an unknown one, at once. Reads only; nothing is written."""
+        if not (math.isfinite(timeout) and 0 <= timeout <= WAIT_MAX_S):
+            raise Invalid(f"timeout must be a number of seconds from 0 to {WAIT_MAX_S:g}")
+
+        def look() -> dict:
+            with ws.store.lock:  # under the lock, so an answer that is rolled back is never reported
+                return inbox_view.ask_for(ws.svc, who, ask_id)
+        end = time.monotonic() + timeout
+        while True:
+            card = await run_in_threadpool(look)
+            left = end - time.monotonic()
+            if card["status"] != "open" or left <= 0 or await request.is_disconnected():
+                break
+            await asyncio.sleep(min(WAIT_POLL_S, left))
+        return {"outcome": {"open": "timeout", "withdrawn": "withdrawn"}.get(card["status"], "answered"), "ask": card}
 
     @app.get("/api/inbox")
     def inbox(_: str = Depends(owner)):
