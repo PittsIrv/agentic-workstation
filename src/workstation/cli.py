@@ -128,6 +128,10 @@ def main(argv=None) -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("serve"); s.add_argument("--port", type=int, default=None); s.add_argument("--fake", action="store_true")
     sub.add_parser("open")
+    s = sub.add_parser("demo", help="try it without real agents: a separate throwaway server on 127.0.0.1 with made-up "
+                                    "items to answer; your own data is not touched")
+    s.add_argument("--port", type=int, default=0, help="port for the demo server (default: any free port)")
+    s.add_argument("--no-open", action="store_true", help="print the sign-in link instead of opening a browser")
     s = sub.add_parser("token"); s.add_argument("principal")
     s = sub.add_parser("agent", help="owner: add an agent kind by name (codex, claude-code, muse, ...), list them, or set an added agent's model")
     s.add_argument("action", choices=["add", "list", "model"]); s.add_argument("name", nargs="?")
@@ -215,6 +219,13 @@ def main(argv=None) -> None:
         if name == "event":
             s.add_argument("json_file", help="normalised event JSON (see docs/events.md)")
     args = ap.parse_args(argv)
+    if args.cmd == "demo":  # runs in a temporary folder of its own; --data and the real config are never read
+        from . import demo
+        try:
+            demo.run(args.port, open_browser=not args.no_open)
+        except (OSError, RuntimeError) as e:
+            sys.exit(f"demo: {clean(e)}")
+        return
     args.cfg = configuration.load(data_dir(args))
     configure_owner(args.cfg.owner_id, args.cfg.owner_name)
     principals.load_custom(data_dir(args))

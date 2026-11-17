@@ -48,7 +48,24 @@ If port 8770 is taken, set `server.port` in `data/config.toml` (`ws serve` and `
 
 The first start creates `data/workstation.db`, your owner token (`data/secrets/<owner id>.token`) and a backup in `data/backups/`. After that it backs up daily and keeps 14. Everything you create stays in `data/`, which git ignores.
 
-Try it without any agent installed: `uv run ws serve --fake` answers mentions with canned replies.
+Try it without any agent installed: `uv run ws serve --fake` answers mentions with canned replies, and `uv run ws demo` shows the decision queue with made-up items ([Try the decision queue](#try-the-decision-queue)).
+
+## Try the decision queue
+
+One command, no agents and no setup (it needs only `uv sync`):
+
+```bash
+uv run ws demo             # add --no-open to print the sign-in link instead of opening a browser
+```
+
+It starts a **separate, throwaway** workstation on `127.0.0.1` (any free port, or `--port N`) with its own temporary data folder, and loads six invented items from three agents in three invented projects (Lantern, Tide Table, Kiln) through the same API a real agent uses. Your own `data/` folder and a server you already run are not touched. Then it does what an agent does after asking: it waits on the first item, exactly like `ws wait`.
+
+1. The terminal prints the address, a one-time sign-in link (opened for you unless `--no-open`) and the line `Claude is now waiting for your answer to: "Which store for the reading-list sync?"`.
+2. Home shows **Waiting for your decision 6**: cards with the options side by side, each with **Cost**, **Risk** and **Then**, and the agent's recommendation outlined.
+3. On the first card click **Choose this** on an option. The button now reads **Confirm choice**; nothing is answered yet. Click it again.
+4. The card moves to **Recently answered**, and the terminal prints `Claude's wait returned: answered, option o1 "Keep the single SQLite file".`
+
+The demo keeps serving so you can answer the rest (an approval, a review, plain questions). To watch another agent get its answer, run the `uv run ws --data <temporary folder> wait <ask-id> --as claude` line the demo printed, with another item's id, in a second terminal. **Ctrl-C** stops the demo and removes the temporary folder. The demo server runs no agent, even if your own config enables runners, reads none of your settings or time data, and sends nothing off the machine.
 
 ## First walkthrough
 
@@ -335,6 +352,7 @@ The source is in `src/workstation`:
 - `config.py`: settings
 - `tickets.py`: read-only Markdown ticket file
 - `inbox.py`: the owner's inbox and its ordering
+- `demo.py`: the seeded demo (`ws demo`) and its made-up items
 - `timesources.py`: the `TimeSource` interface and the Daybook reader
 - `static/index.html`: the dashboard
 
