@@ -2,6 +2,7 @@
 
 Four sources, one list: items agents submit (asks), decisions still pending, and tasks in `needs_review`
 or `blocked`. Pure functions of the current state and a clock, so ordering is testable.
+Home shows the same list grouped by project, or by label for an item with no project (`groups`).
 
 Ordering (this project's default, not a researched rule): overdue first, then high, normal and low urgency;
 inside a group the earliest deadline, then the item that has waited longest. Urgency of a decision is its own
@@ -80,6 +81,30 @@ def _entries(svc: Service) -> list[dict]:
     return out
 
 
+def group_of(e: dict) -> dict:
+    """Where an open item belongs on Home: its project when it has one, else its label (a project or ticket tag the
+    agent gave it), else the group of items with neither. Labels match without regard to case."""
+    if e.get("project_id"):
+        return {"key": f"project:{e['project_id']}", "name": e.get("project") or e["project_id"], "by": "project"}
+    label = (e.get("label") or "").strip()
+    if label:
+        return {"key": f"label:{label.lower()}", "name": label, "by": "label"}
+    return {"key": "none", "name": "No project", "by": "none"}
+
+
+def groups(items: list[dict]) -> list[dict]:
+    """Open items grouped for Home. `items` are already most urgent first; a group keeps that order inside, and groups
+    are ordered by their most urgent item, so the item that needs the owner most is still the first thing on the page.
+    Each group lists item keys, not copies of the items."""
+    out: dict[str, dict] = {}
+    for e in items:
+        g = group_of(e)
+        out.setdefault(g["key"], {**g, "count": 0, "items": []})
+        out[g["key"]]["items"].append(e["key"])
+        out[g["key"]]["count"] += 1
+    return list(out.values())
+
+
 def order_key(e: dict, now: datetime):
     overdue = bool(e.get("due_at")) and _dt(e["due_at"]) < now
     return (0 if overdue else 1, RANK[e["urgency"]], e["due_at"] and _dt(e["due_at"]).timestamp() or float("inf"),
@@ -95,7 +120,7 @@ def inbox(svc: Service, now: datetime) -> dict:
         until = svc.s.snoozes.get(e["key"])
         e["snoozed_until"] = until if until and _dt(until) > now else None
     closed = sorted((a for a in svc.s.asks.values() if a["status"] != "open"), key=lambda a: a["closed_at"], reverse=True)
-    return {"now": now.isoformat(timespec="seconds"), "items": items,
+    return {"now": now.isoformat(timespec="seconds"), "items": items, "groups": groups(items),
             "answered": [ask_card(svc, a) for a in closed[:RECENT_ANSWERED]]}
 
 

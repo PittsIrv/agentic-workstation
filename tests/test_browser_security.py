@@ -215,6 +215,8 @@ def site(tmp_path_factory, fake_daybook):
               json={"text": HOSTILE, "stance": "disagree"}).raise_for_status()
     http.post(f"/api/discussions/{disc['id']}/close", headers=muse,
               json={"outcome": "sent_to_user", "note": HOSTILE[:500]}).raise_for_status()
+    # an item with no project but a label, so Home has a group that is named by an agent's own (hostile) label
+    http.post("/api/asks", headers=muse, json={"title": HOSTILE[:200], "kind": "question", "label": HOSTILE[:60]}).raise_for_status()
     profile = tmp_path_factory.mktemp("profile")
     yield {"base": base, "http": http, "profile": profile,
            "pages": {"home": "#/", "managers": "#/managers", "overview": "#/overview", "threads": "#/threads", f"thread": f"#/threads/{th['id']}", "tasks": "#/tasks",
@@ -323,6 +325,26 @@ def test_home_is_the_decision_queue_with_option_cards(site):
     assert "Recently answered" in page and "answered: " in page  # the answered item shows the chosen option
     assert re.search(r'href="#/tasks/task_[^"]+">task</a>', html)
     assert page.count("onerror") >= 8
+
+
+def test_home_groups_the_queue_by_project_and_by_label(site):
+    """Home puts the open cards under one heading per project; an item with no project goes under its label, and one
+    with neither under "No project". Every card is in exactly one group and each heading counts the cards under it."""
+    html = dump(site, site["pages"]["home"]).split("<script")[0]
+    keys = re.findall(r'<div class="grp" data-group="([^"]*)"', html)
+    assert len(keys) == len(set(keys)) == 3 and "project:general" in keys and "none" in keys
+    assert sum(k.startswith("label:") for k in keys) == 1, "the item with only a label has a group of its own"
+    total = int(re.search(r'Waiting for your decision <span class="cnt">(\d+)</span>', html).group(1))
+    counts = []
+    for part in html.split('<div class="grp" ')[1:]:
+        n = int(re.search(r'<h3>.*?<span class="cnt">(\d+)</span></h3>', part, re.S).group(1))
+        assert part.count('<div class="ibw">') == n, "a heading's count is the number of cards under it"
+        counts.append(n)
+    assert sum(counts) == total and total == html.count('<div class="ibw">')
+    page = " ".join(inspect(html).text)
+    assert "by project" in page and "No project" in page
+    flat = dump(site, site["pages"]["inbox"]).split("<script")[0]  # the Inbox page keeps its single ordered list
+    assert 'class="grp"' not in flat and flat.count('<div class="ibw">') == total
 
 
 def test_the_managers_page_shows_manager_conversations_and_folds_lower_level_work(site):
