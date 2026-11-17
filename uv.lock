@@ -18,6 +18,7 @@ dev = [
     { name = "httpx" },
     { name = "markdown-it-py" },
     { name = "pytest" },
+    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -33,6 +34,7 @@ dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "markdown-it-py", specifier = ">=4.2.0" },
     { name = "pytest", specifier = ">=9.2.0" },
+    { name = "websockets", specifier = ">=15" },
 ]
 
 [[package]]

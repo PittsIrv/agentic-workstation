@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
+import time
 import webbrowser
 from pathlib import Path
 
@@ -19,6 +21,9 @@ from . import principals
 from .principals import configure_owner, owner
 
 URL = os.environ.get("WS_URL")
+# `ws wait`: exit statuses (0 is "the owner answered", 1 an error, 2 a usage error) and the length of one long-poll.
+EXIT_TIMEOUT, EXIT_WITHDRAWN = 3, 4
+WAIT_CHUNK_S = 25.0
 
 
 def data_dir(args) -> Path:
@@ -86,12 +91,47 @@ def remind(args) -> None:
             print(f"note: {problem}; printed above instead")
 
 
+def wait(args) -> int:
+    """Block until the owner answers one of the caller's own items, or --timeout seconds pass. Prints
+    {"outcome": answered | withdrawn | timeout, "ask": {...}} and returns the exit status: 0 answered,
+    EXIT_TIMEOUT still open, EXIT_WITHDRAWN withdrawn. Any error (unknown id, no token, server unreachable) exits 1."""
+    c = client(args, args.who)
+    end = time.monotonic() + args.timeout
+    while True:
+        left = max(0.0, end - time.monotonic())
+        chunk = min(WAIT_CHUNK_S, left)
+        try:
+            r = c.get(f"/api/asks/{args.ask_id}/wait", params={"timeout": round(chunk, 3)}, timeout=chunk + 15)
+        except httpx.HTTPError as e:
+            sys.exit(f"cannot reach the workstation server: {clean(e) or type(e).__name__}")
+        if r.status_code >= 400:
+            sys.exit(f"{r.status_code}: {r.text}")
+        res = r.json()
+        if res["outcome"] != "timeout" or left <= chunk:
+            break
+    print(json.dumps(res, indent=1, ensure_ascii=False))
+    if res["outcome"] == "timeout":
+        print(f"still open after {args.timeout:g} s; run the same command again to keep waiting", file=sys.stderr)
+    return {"answered": 0, "withdrawn": EXIT_WITHDRAWN}.get(res["outcome"], EXIT_TIMEOUT)
+
+
+def seconds(text: str) -> float:
+    v = float(text)
+    if not (math.isfinite(v) and v >= 0):
+        raise argparse.ArgumentTypeError("must be zero or more seconds")
+    return v
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="ws")
     ap.add_argument("--data", help="data directory (default ./data or $WS_DATA)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("serve"); s.add_argument("--port", type=int, default=None); s.add_argument("--fake", action="store_true")
     sub.add_parser("open")
+    s = sub.add_parser("demo", help="try it without real agents: a separate throwaway server on 127.0.0.1 with made-up "
+                                    "items to answer; your own data is not touched")
+    s.add_argument("--port", type=int, default=0, help="port for the demo server (default: any free port)")
+    s.add_argument("--no-open", action="store_true", help="print the sign-in link instead of opening a browser")
     s = sub.add_parser("token"); s.add_argument("principal")
     s = sub.add_parser("agent", help="owner: add an agent kind by name (codex, claude-code, muse, ...), list them, or set an added agent's model")
     s.add_argument("action", choices=["add", "list", "model"]); s.add_argument("name", nargs="?")
@@ -128,6 +168,11 @@ def main(argv=None) -> None:
     s.add_argument("--inbox", action="store_true", help="owner only: the whole inbox, most urgent first")
     s.add_argument("--since", default=None, help="only items created or changed after this ISO time")
     s.add_argument("--id", dest="ask_id", default=None, help="one item by id")
+    s = sub.add_parser("wait", help="block until the owner answers one of your own items (exit 0), or the timeout "
+                                    f"passes (exit {EXIT_TIMEOUT}); exit {EXIT_WITHDRAWN} if it was withdrawn")
+    s.add_argument("ask_id"); s.add_argument("--as", dest="who", default=None)
+    s.add_argument("--timeout", type=seconds, default=300.0, metavar="SECONDS",
+                   help="give up after this long (default 300); keep it under your own command time limit")
     s = sub.add_parser("answer", help="owner: answer an item")
     s.add_argument("ask_id"); s.add_argument("--as", dest="who", default=None)
     s.add_argument("--resolution", default="answered", choices=["answered", "approved", "declined", "dismissed"])
@@ -174,6 +219,13 @@ def main(argv=None) -> None:
         if name == "event":
             s.add_argument("json_file", help="normalised event JSON (see docs/events.md)")
     args = ap.parse_args(argv)
+    if args.cmd == "demo":  # runs in a temporary folder of its own; --data and the real config are never read
+        from . import demo
+        try:
+            demo.run(args.port, open_browser=not args.no_open)
+        except (OSError, RuntimeError) as e:
+            sys.exit(f"demo: {clean(e)}")
+        return
     args.cfg = configuration.load(data_dir(args))
     configure_owner(args.cfg.owner_id, args.cfg.owner_name)
     principals.load_custom(data_dir(args))
@@ -308,6 +360,9 @@ def main(argv=None) -> None:
         else:
             out(c.get("/api/inbox") if args.inbox else
                 c.get("/api/asks", params={"status": args.status, **({"since": args.since} if args.since else {})}))
+    elif args.cmd == "wait":
+        if code := wait(args):
+            sys.exit(code)
     elif args.cmd == "answer":
         out(client(args, args.who).post(f"/api/asks/{args.ask_id}/answer",
                                         json={"resolution": args.resolution, "note": args.note, "option_id": args.option_id}))

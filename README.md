@@ -48,7 +48,24 @@ If port 8770 is taken, set `server.port` in `data/config.toml` (`ws serve` and `
 
 The first start creates `data/workstation.db`, your owner token (`data/secrets/<owner id>.token`) and a backup in `data/backups/`. After that it backs up daily and keeps 14. Everything you create stays in `data/`, which git ignores.
 
-Try it without any agent installed: `uv run ws serve --fake` answers mentions with canned replies.
+Try it without any agent installed: `uv run ws serve --fake` answers mentions with canned replies, and `uv run ws demo` shows the decision queue with made-up items ([Try the decision queue](#try-the-decision-queue)).
+
+## Try the decision queue
+
+One command, no agents and no setup (it needs only `uv sync`):
+
+```bash
+uv run ws demo             # add --no-open to print the sign-in link instead of opening a browser
+```
+
+It starts a **separate, throwaway** workstation on `127.0.0.1` (any free port, or `--port N`) with its own temporary data folder, and loads six invented items from three agents in three invented projects (Lantern, Tide Table, Kiln) through the same API a real agent uses. Your own `data/` folder and a server you already run are not touched. Then it does what an agent does after asking: it waits on the first item, exactly like `ws wait`.
+
+1. The terminal prints the address, a one-time sign-in link (opened for you unless `--no-open`) and the line `Claude is now waiting for your answer to: "Which store for the reading-list sync?"`.
+2. Home shows **Waiting for your decision 6**: cards with the options side by side, each with **Cost**, **Risk** and **Then**, and the agent's recommendation outlined.
+3. On the first card click **Choose this** on an option. The button now reads **Confirm choice**; nothing is answered yet. Click it again.
+4. The card moves to **Recently answered**, and the terminal prints `Claude's wait returned: answered, option o1 "Keep the single SQLite file".`
+
+The demo keeps serving so you can answer the rest (an approval, a review, plain questions). To watch another agent get its answer, run the `uv run ws --data <temporary folder> wait <ask-id> --as claude` line the demo printed, with another item's id, in a second terminal. **Ctrl-C** stops the demo and removes the temporary folder. The demo server runs no agent, even if your own config enables runners, reads none of your settings or time data, and sends nothing off the machine.
 
 ## First walkthrough
 
@@ -79,12 +96,15 @@ An agent submits with its own token (`uv run ws token claude`, `uv run ws token 
 ```bash
 uv run ws ask "Approve running the schema migration?" --as claude --kind approval \
   --blocked "deploy of the billing change" --cost "release slips a day each day" --urgency high --key migration-1
+uv run ws wait <ask-id> --as claude --timeout 120   # block until you answer it (exit 0) or 120 s pass (exit 3)
 uv run ws asks --as claude --status closed     # the owner's answers
 uv run ws asks --inbox                         # you: the whole inbox as JSON
 uv run ws withdraw <ask-id> --as claude        # take back an item
 ```
 
 The same through the API: `POST /api/asks` (`title`, `kind`, `text`, `blocked`, `cost_of_waiting`, `urgency`, `project_id`, `task_id`, `url`, `due_at`/`due_tz`, `idempotency_key`), `GET /api/asks` (your own, or all for the owner), `GET /api/inbox` and `POST /api/asks/<id>/answer` (owner only). The `ask_created` event type works on `POST /api/events` ([docs/events.md](docs/events.md)). A decision or question can carry **options** (2 to 6, each with a label and optionally cost, risk and what happens after), the label of the option the agent **recommends**, and a short project or ticket **label**: `ws ask "Release now?" --kind decision --option "Ship now|$0|untested on Linux|goes out today" --option "Wait a day|one day|low|CI runs first" --recommend "Wait a day" --label T-0094`. The owner clicks an option (or writes an answer); the agent reads it with `ws asks --as claude --id <ask-id>` or `ws asks --as claude --status all --since <ISO time>` (`GET /api/asks/<id>`, `GET /api/asks?since=`). An agent sees only its own items; another agent's id answers "not found". Defaults, all yours to change: title up to 200 characters, details 2000, blocked and cost 300, and 20 open items per agent (`[inbox] max_open_per_agent`). Text is shown as plain text and the agent's cost-of-waiting line is labelled as the agent's own words. An agent cannot answer its own items.
+
+**Waiting for the answer.** Instead of polling, an agent can block on one of its own items: `ws wait <ask-id> --as claude [--timeout SECONDS]` (default 300) returns as soon as you answer and prints `{"outcome", "ask"}`. Exit status: `0` you answered (read `resolution`, `option_id` and `note`), `3` the timeout passed and the item is still open (run it again to keep waiting), `4` the agent withdrew the item, `1` an error such as an unknown id or a server that is not running. Behind it is a long-poll, `GET /api/asks/<id>/wait?timeout=<seconds, 0 to 60>`, which answers `{"outcome": "answered" | "withdrawn" | "timeout", "ask": {...}}`; the command repeats it until its own timeout. Waiting is authorised exactly like reading: own items only, another agent's id answers the same "not found" at once, and nothing is written.
 
 Ready-to-copy instructions that teach Codex and Claude Code to submit items are in [docs/agent-instructions/](docs/agent-instructions/). The plan for time tracking and reminders is in [docs/unified-workspace.md](docs/unified-workspace.md).
 
@@ -271,7 +291,7 @@ The server takes the author of every event from the token, never from the reques
 | Link evidence, request review on its own tasks | yes | yes | — | — |
 | Record a review verdict | yes | — | yes | — |
 | Propose a decision | yes | yes | yes | — |
-| Submit an item to the inbox, withdraw it, read its answer | yes | yes | yes | yes |
+| Submit an item to the inbox, withdraw it, read or wait for its answer | yes | yes | yes | yes |
 | Answer an inbox item | yes | — | — | — |
 
 ## Report work from another tool
@@ -330,6 +350,7 @@ The source is in `src/workstation`:
 - `config.py`: settings
 - `tickets.py`: read-only Markdown ticket file
 - `inbox.py`: the owner's inbox and its ordering
+- `demo.py`: the seeded demo (`ws demo`) and its made-up items
 - `timesources.py`: the `TimeSource` interface and the Daybook reader
 - `static/index.html`: the dashboard
 
